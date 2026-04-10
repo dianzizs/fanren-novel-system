@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Novel System Workspace</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body data-book-id="{{ default_book_id }}">
+  <div class="app-shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Long-form Fiction Workspace</p>
+        <h1>《{{ default_book_title }}》拆书 / 问答 / 续写系统</h1>
+        <p class="hero-copy">
+          围绕 ingestion、planner、retrieval、memory、validation 串起的长文本工作台。
+        </p>
+      </div>
+      <div class="hero-actions">
+        <button id="index-book-btn" class="primary">重建索引</button>
+        <button id="reload-dashboard-btn" class="secondary">刷新看板</button>
+      </div>
+    </header>
+
+    <nav class="tab-bar">
+      <button class="tab active" data-tab="library">Library</button>
+      <button class="tab" data-tab="reader">Reader Workspace</button>
+      <button class="tab" data-tab="knowledge">Knowledge View</button>
+      <button class="tab" data-tab="continuation">Continuation Studio</button>
+      <button class="tab" data-tab="evaluation">Evaluation Dashboard</button>
+    </nav>
+
+    <main>
+      <section class="panel tab-panel active" id="tab-library">
+        <div class="section-head">
+          <h2>Library</h2>
+          <p>当前项目书籍、索引状态与章节规模。</p>
+        </div>
+        <div id="book-cards" class="book-grid"></div>
+      </section>
+
+      <section class="panel tab-panel" id="tab-reader">
+        <div class="section-head">
+          <h2>Reader Workspace</h2>
+          <p>左侧目录、中间正文、右侧 Ask Panel。</p>
+        </div>
+        <div class="reader-layout">
+          <aside class="reader-sidebar">
+            <h3>章节目录</h3>
+            <div id="chapter-tree" class="chapter-tree"></div>
+          </aside>
+          <article class="reader-pane">
+            <div id="reader-summary" class="summary-card"></div>
+            <div id="reader-content" class="reader-content"></div>
+          </article>
+          <aside class="ask-panel">
+            <h3>Ask Panel</h3>
+            <textarea id="ask-query" rows="6">韩立为什么会去参加七玄门测试？</textarea>
+            <div class="inline-fields">
+              <input id="scope-start" type="number" value="1" min="1" />
+              <span>到</span>
+              <input id="scope-end" type="number" value="14" min="1" />
+            </div>
+            <button id="ask-btn" class="primary block">提问</button>
+            <div id="ask-result" class="answer-card"></div>
+            <div id="evidence-list" class="evidence-list"></div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="panel tab-panel" id="tab-knowledge">
+        <div class="section-head">
+          <h2>Knowledge View</h2>
+          <p>人物卡、时间线与结构化信息。</p>
+        </div>
+        <div class="knowledge-grid">
+          <div>
+            <h3>人物卡</h3>
+            <div id="character-cards" class="character-list"></div>
+          </div>
+          <div>
+            <h3>时间线</h3>
+            <div id="timeline-board" class="timeline-board"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel tab-panel" id="tab-continuation">
+        <div class="section-head">
+          <h2>Continuation Studio</h2>
+          <p>约束驱动、多版本可扩展的续写工作区。</p>
+        </div>
+        <div class="continuation-grid">
+          <div class="constraint-box">
+            <h3>约束面板</h3>
+            <textarea id="continuation-query" rows="7">请基于前14章续写200到350字，写韩立带着刚打开的瓶子回屋后的心理和动作，不要剧透后文。</textarea>
+            <button id="continue-btn" class="primary block">生成续写</button>
+          </div>
+          <div class="version-box">
+            <h3>生成结果</h3>
+            <div id="continuation-result" class="continuation-result"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel tab-panel" id="tab-evaluation">
+        <div class="section-head">
+          <h2>Evaluation Dashboard</h2>
+          <p>baseline 对比、失败案例与指标图表。</p>
+        </div>
+        <div id="metric-grid" class="metric-grid"></div>
+        <div class="evaluation-grid">
+          <div>
+            <h3>Baseline 对比</h3>
+            <div id="baseline-list" class="baseline-list"></div>
+          </div>
+          <div>
+            <h3>失败案例</h3>
+            <div id="failure-list" class="failure-list"></div>
+          </div>
+        </div>
+        <div class="chart-box">
+          <h3>指标图表</h3>
+          <pre id="chart-json" class="chart-json"></pre>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
+

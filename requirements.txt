@@ -1,0 +1,9 @@
+fastapi>=0.135
+uvicorn>=0.44
+python-multipart>=0.0.26
+numpy>=2.3
+scikit-learn>=1.7
+pydantic>=2.12
+requests>=2.32
+jinja2>=3.1
+
