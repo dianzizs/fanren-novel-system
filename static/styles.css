@@ -514,6 +514,33 @@ select:focus-visible,
   background: rgba(245, 201, 106, 0.12);
 }
 
+.status-tag.indexing {
+  color: var(--accent-warm);
+  border-color: rgba(245, 201, 106, 0.3);
+  background: rgba(245, 201, 106, 0.12);
+  animation: pulse-tag 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-tag {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.book-progress-bar {
+  height: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.book-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-warm), var(--accent));
+  transition: width 0.4s ease;
+  border-radius: 2px;
+}
+
 .mini-tag {
   color: var(--accent-strong);
   border: 1px solid rgba(255, 126, 139, 0.18);
@@ -1127,6 +1154,79 @@ input::placeholder {
   gap: 16px;
 }
 
+.detail-artifacts {
+  display: grid;
+  gap: 14px;
+  padding: 16px 20px;
+  background: var(--panel);
+  border-radius: var(--radius-lg);
+}
+
+.detail-artifacts-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.detail-artifact-meta {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.detail-artifact-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.detail-artifact-controls select {
+  min-width: 220px;
+}
+
+.detail-artifact-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.detail-artifact-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.detail-artifact-chip.active {
+  color: var(--text);
+  border-color: rgba(116, 225, 184, 0.3);
+  background: rgba(116, 225, 184, 0.12);
+}
+
+.detail-artifact-viewer {
+  min-height: 240px;
+  max-height: 420px;
+  margin: 0;
+  padding: 14px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(10, 14, 20, 0.88);
+  color: #d8e5ff;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .detail-sidebar,
 .detail-sidebar-right {
   padding: 16px;
@@ -1139,4 +1239,10 @@ input::placeholder {
 .detail-main {
   display: grid;
   gap: 16px;
+}
+
+@media (max-width: 1100px) {
+  .detail-content {
+    grid-template-columns: 1fr;
+  }
 }

@@ -1,8 +1,37 @@
 from __future__ import annotations
 
+import unicodedata
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+
+
+def _fix_filename_encoding(filename: str) -> str:
+    """修复 Windows curl 上传时的文件名编码问题（GBK bytes 被当成 UTF-8 解码产生的乱码）"""
+    # 检测乱码模式：字符串主要由 Latin-1 补充区字符组成（GBK 字节被 UTF-8 解码的典型特征）
+    latin1_like = sum(1 for c in filename if "\u0080" <= c <= "\u00ff") / max(len(filename), 1)
+    if latin1_like > 0.3:
+        # 将 UTF-8 解码后的"假 Latin-1"字节重新解释为 GBK 编码
+        try:
+            raw_bytes = filename.encode("utf-8")
+            corrected = raw_bytes.decode("gbk", errors="replace")
+            if any("\u4e00" <= c <= "\u9fff" for c in corrected):
+                return corrected
+        except Exception:
+            pass
+    return filename
+
+
+def _sanitize_book_id(name: str) -> str:
+    """生成安全且可读的书名 ID"""
+    # 如果包含汉字，直接用拼音首字母或原文做 ID
+    has_cjk = any("\u4e00" <= c <= "\u9fff" for c in name)
+    if has_cjk:
+        # 提取中文和 ASCII 字符，保留可读性
+        cleaned = "".join(c if ("\u4e00" <= c <= "\u9fff" or c.isalnum() or c in "()-_") else "-" for c in name)
+        cleaned = cleaned.strip(" -")
+        return cleaned[:60] if cleaned else name[:30]
+    return name
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -68,16 +97,38 @@ def create_app() -> FastAPI:
         if file is not None:
             upload_dir = config.data_dir / "uploads"
             upload_dir.mkdir(parents=True, exist_ok=True)
-            target_path = upload_dir / file.filename
+            raw_filename = file.filename
+            fixed_filename = _fix_filename_encoding(raw_filename)
+            safe_id = _sanitize_book_id(fixed_filename)
+            existing = next((book for book in service.repo.list_books() if book["id"] == safe_id), None)
+            if existing and existing.get("status") == "indexing":
+                raise HTTPException(status_code=409, detail="book is indexing")
+            target_path = upload_dir / fixed_filename
             target_path.write_bytes(await file.read())
-            book_id = Path(file.filename).stem.replace(" ", "-").lower()
-            manifest = service.repo.ensure_book_manifest(book_id, title or file.filename, str(target_path), source="upload", status="pending")
+            manifest = service.repo.ensure_book_manifest(
+                safe_id,
+                title or fixed_filename,
+                str(target_path),
+                source="upload",
+                status="pending",
+                reset_existing=bool(existing),
+            )
             return manifest
         chosen_path = Path(file_path) if file_path else config.default_book_path
         if not chosen_path.exists():
             raise HTTPException(status_code=404, detail="book file not found")
         book_id = chosen_path.stem.replace(" ", "-").replace("(", "").replace(")", "").lower()
-        manifest = service.repo.ensure_book_manifest(book_id, title or chosen_path.stem, str(chosen_path), source="local", status="pending")
+        existing = next((book for book in service.repo.list_books() if book["id"] == book_id), None)
+        if existing and existing.get("status") == "indexing":
+            raise HTTPException(status_code=409, detail="book is indexing")
+        manifest = service.repo.ensure_book_manifest(
+            book_id,
+            title or chosen_path.stem,
+            str(chosen_path),
+            source="local",
+            status="pending",
+            reset_existing=bool(existing),
+        )
         return manifest
 
     @app.post("/api/books/{book_id}/index")
@@ -103,6 +154,20 @@ def create_app() -> FastAPI:
     async def start_book_index(book_id: str):
         try:
             return service.start_book_index(book_id)
+        except FileNotFoundError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+
+    @app.get("/api/books/{book_id}/artifacts")
+    async def get_book_artifacts(book_id: str):
+        try:
+            return service.get_book_artifact_catalog(book_id)
+        except FileNotFoundError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+
+    @app.get("/api/books/{book_id}/artifacts/{artifact_name}")
+    async def get_book_artifact(book_id: str, artifact_name: str, full: bool = False, limit: int = 20):
+        try:
+            return service.get_book_artifact(book_id, artifact_name, full=full, limit=limit)
         except FileNotFoundError as e:
             raise HTTPException(status_code=404, detail=str(e))
 

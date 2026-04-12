@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import pickle
 import re
+import shutil
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime
@@ -131,25 +132,63 @@ class BookIndexRepository:
             return
         manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    def ensure_book_manifest(self, book_id: str, title: str, source_path: str, source: str = "local") -> dict[str, Any]:
+    def ensure_book_manifest(
+        self,
+        book_id: str,
+        title: str,
+        source_path: str,
+        source: str = "local",
+        status: str = "pending",
+        reset_existing: bool = False,
+    ) -> dict[str, Any]:
         book_dir = self._book_dir(book_id)
         book_dir.mkdir(parents=True, exist_ok=True)
         manifest_path = book_dir / "manifest.json"
         if manifest_path.exists():
-            with manifest_path.open("r", encoding="utf-8") as handle:
-                return json.load(handle)
+            if reset_existing:
+                shutil.rmtree(book_dir)
+                book_dir.mkdir(parents=True, exist_ok=True)
+                self._cache.pop(book_id, None)
+            else:
+                with manifest_path.open("r", encoding="utf-8") as handle:
+                    return json.load(handle)
         manifest = {
             "id": book_id,
             "title": title,
             "source_path": source_path,
             "source": source,
+            "status": status,
             "chapter_count": 0,
             "chunk_count": 0,
             "indexed": False,
             "indexed_at": None,
+            "index_progress": 0.0,
         }
         manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
         return manifest
+
+    def read_artifact(self, book_id: str, artifact_name: str) -> Any:
+        filenames = {
+            "manifest": "manifest.json",
+            "chapters": "chapters.json",
+            "chapter_chunks": "chapter_chunks.json",
+            "chapter_summaries": "chapter_summaries.json",
+            "event_timeline": "event_timeline.json",
+            "character_card": "character_card.json",
+            "relationship_graph": "relationship_graph.json",
+            "world_rule": "world_rule.json",
+            "canon_memory": "canon_memory.json",
+            "recent_plot": "recent_plot.json",
+            "style_samples": "style_samples.json",
+            "vision_parse": "vision_parse.json",
+        }
+        filename = filenames.get(artifact_name)
+        if not filename:
+            raise FileNotFoundError(f"Artifact {artifact_name} is not supported")
+        path = self._book_dir(book_id) / filename
+        if not path.exists():
+            raise FileNotFoundError(f"Artifact {artifact_name} not found for {book_id}")
+        return json.loads(path.read_text(encoding="utf-8"))
 
     def build_from_txt(self, book_id: str, title: str, source_path: Path) -> dict[str, Any]:
         raw_text = source_path.read_text(encoding="utf-8")
@@ -554,6 +593,13 @@ class BookIndexRepository:
         )
         matrix = vectorizer.fit_transform(texts)
         return {"vectorizer": vectorizer, "matrix": matrix}
+
+    def _build_vector_payload_for_corpus(self, book_id: str, corpus_name: str, docs: list[dict[str, Any]]) -> None:
+        """为单个 corpus 构建并保存向量索引（独立调用）"""
+        book_dir = self._book_dir(book_id)
+        payload = self._build_vector_payload(docs)
+        with (book_dir / f"{corpus_name}.pkl").open("wb") as handle:
+            pickle.dump(payload, handle)
 
     def _clean_line(self, line: str) -> str:
         line = line.replace("\u3000", " ").strip()

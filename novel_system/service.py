@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -149,6 +150,22 @@ GRAPH_ALIAS_LOOKUP = {
 }
 
 
+ARTIFACT_LABELS = {
+    "manifest": "书目状态",
+    "chapters": "分章结果",
+    "chapter_chunks": "切片结果",
+    "chapter_summaries": "章节摘要",
+    "event_timeline": "事件时间线",
+    "character_card": "人物卡",
+    "relationship_graph": "关系图",
+    "world_rule": "世界规则",
+    "canon_memory": "设定记忆",
+    "recent_plot": "近期剧情",
+    "style_samples": "风格样本",
+    "vision_parse": "视觉解析",
+}
+
+
 class NovelSystemService:
     def __init__(self, config: AppConfig | None = None) -> None:
         self.config = config or AppConfig.load()
@@ -255,6 +272,52 @@ class NovelSystemService:
             "message": self._get_status_message(manifest),
         }
 
+    def get_book_artifact_catalog(self, book_id: str) -> dict[str, Any]:
+        manifest = next((book for book in self.repo.list_books() if book["id"] == book_id), None)
+        if not manifest:
+            raise FileNotFoundError(f"Book {book_id} not found")
+
+        artifacts = []
+        for name, label in ARTIFACT_LABELS.items():
+            try:
+                content = self.repo.read_artifact(book_id, name)
+            except FileNotFoundError:
+                continue
+            count = len(content) if isinstance(content, list) else None
+            artifacts.append(
+                {
+                    "name": name,
+                    "label": label,
+                    "count": count,
+                    "available": True,
+                }
+            )
+
+        return {
+            "book": manifest,
+            "artifacts": artifacts,
+        }
+
+    def get_book_artifact(self, book_id: str, artifact_name: str, full: bool = False, limit: int = 20) -> dict[str, Any]:
+        manifest = next((book for book in self.repo.list_books() if book["id"] == book_id), None)
+        if not manifest:
+            raise FileNotFoundError(f"Book {book_id} not found")
+
+        content = self.repo.read_artifact(book_id, artifact_name)
+        total_count = len(content) if isinstance(content, list) else None
+        preview = content[: max(1, limit)] if isinstance(content, list) and not full else content
+        truncated = bool(isinstance(content, list) and total_count is not None and len(preview) < total_count)
+        return {
+            "book": manifest,
+            "artifact": {
+                "name": artifact_name,
+                "label": ARTIFACT_LABELS.get(artifact_name, artifact_name),
+            },
+            "content": preview,
+            "total_count": total_count,
+            "truncated": truncated,
+        }
+
     def _get_status_message(self, manifest: dict[str, Any]) -> str:
         """获取状态描述"""
         status = manifest.get("status", "pending")
@@ -282,7 +345,7 @@ class NovelSystemService:
         self.repo.update_book_manifest(book_id, manifest)
 
     def start_book_index(self, book_id: str) -> dict[str, Any]:
-        """开始索引书籍"""
+        """开始索引书籍（后台异步执行）"""
         manifest = next((book for book in self.repo.list_books() if book["id"] == book_id), None)
         if not manifest:
             raise FileNotFoundError(f"Book {book_id} not found")
@@ -294,7 +357,115 @@ class NovelSystemService:
             return {"status": "ready", "message": "已经分析完成"}
 
         self.set_book_indexing(book_id, "indexing", 0.0)
+
+        thread = threading.Thread(
+            target=self._run_book_index,
+            args=(book_id,),
+            daemon=True,
+        )
+        thread.start()
         return {"status": "indexing", "message": "开始分析"}
+
+    def _run_book_index(self, book_id: str) -> None:
+        """后台执行书籍索引，分步骤更新进度"""
+        try:
+            manifest = next((book for book in self.repo.list_books() if book["id"] == book_id), None)
+            if not manifest:
+                return
+            source_path = Path(manifest["source_path"])
+            title = manifest["title"]
+
+            self.set_book_indexing(book_id, "indexing", 0.05)
+            raw_text = source_path.read_text(encoding="utf-8")
+
+            self.set_book_indexing(book_id, "indexing", 0.10)
+            chapters = self.repo._parse_chapters(raw_text)
+
+            self.set_book_indexing(book_id, "indexing", 0.20)
+            chunks = self.repo._build_chunks(chapters)
+
+            self.set_book_indexing(book_id, "indexing", 0.30)
+            chapter_summaries = self.repo._build_chapter_summaries(chapters)
+
+            self.set_book_indexing(book_id, "indexing", 0.40)
+            events = self.repo._build_event_timeline(chapters, chapter_summaries)
+
+            self.set_book_indexing(book_id, "indexing", 0.50)
+            character_cards = self.repo._build_character_cards(chapters)
+
+            self.set_book_indexing(book_id, "indexing", 0.60)
+            relationships = self.repo._build_relationships(chapters, character_cards)
+
+            self.set_book_indexing(book_id, "indexing", 0.65)
+            world_rules = self.repo._build_world_rules(chapters)
+
+            self.set_book_indexing(book_id, "indexing", 0.70)
+            canon_memory = self.repo._build_canon_memory(chapter_summaries, events)
+
+            self.set_book_indexing(book_id, "indexing", 0.75)
+            style_samples = self.repo._build_style_samples(chapters)
+
+            self.set_book_indexing(book_id, "indexing", 0.80)
+            recent_plot = self.repo._build_recent_plot_docs(chapters, chapter_summaries)
+
+            corpora = {
+                "chapter_chunks": chunks,
+                "chapter_summaries": chapter_summaries,
+                "event_timeline": events,
+                "character_card": character_cards,
+                "relationship_graph": relationships,
+                "world_rule": world_rules,
+                "canon_memory": canon_memory,
+                "recent_plot": recent_plot,
+                "style_samples": style_samples,
+                "vision_parse": [],
+            }
+
+            book_dir = self.repo._book_dir(book_id)
+            book_dir.mkdir(parents=True, exist_ok=True)
+            (book_dir / "chapters.json").write_text(
+                json.dumps(chapters, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+
+            self.set_book_indexing(book_id, "indexing", 0.82)
+            total = len(corpora)
+            for idx, (name, docs) in enumerate(corpora.items()):
+                (book_dir / f"{name}.json").write_text(
+                    json.dumps(docs, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+                self.set_book_indexing(book_id, "indexing", 0.82 + 0.14 * (idx / total))
+
+            for idx, (name, docs) in enumerate(corpora.items()):
+                self.repo._build_vector_payload_for_corpus(book_id, name, docs)
+                self.set_book_indexing(book_id, "indexing", 0.96 + 0.04 * (idx / total))
+
+            final_manifest = {
+                "id": book_id,
+                "title": title,
+                "source_path": str(source_path),
+                "source": manifest.get("source", "local"),
+                "chapter_count": len(chapters),
+                "chunk_count": len(chunks),
+                "indexed": True,
+                "status": "ready",
+                "indexed_at": datetime.now().isoformat(),
+                "index_progress": 1.0,
+            }
+            (book_dir / "manifest.json").write_text(
+                json.dumps(final_manifest, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            self.repo._cache.pop(book_id, None)
+
+        except Exception as e:
+            import sys
+            print(f"[INDEX ERROR] {book_id}: {e}", file=sys.stderr, flush=True)
+            manifest = next((book for book in self.repo.list_books() if book["id"] == book_id), None)
+            if manifest:
+                manifest["status"] = "error"
+                self.repo.update_book_manifest(book_id, manifest)
 
     def delete_book(self, book_id: str) -> dict[str, Any]:
         """删除书目及其关联数据"""

@@ -9,6 +9,12 @@ const router = {
   currentBookId: null,
 };
 
+const detailArtifactState = {
+  bookId: null,
+  selectedName: "manifest",
+  catalog: [],
+};
+
 const graphState = {
   canvas: null,
   ctx: null,
@@ -250,10 +256,13 @@ async function loadBooks() {
     const actionBtn = status === "pending"
       ? `<button class="start-index-btn secondary" data-book-id="${escapeHtml(book.id)}">开始分析</button>`
       : status === "indexing"
-      ? `<span class="status-tag">分析中...</span>`
+      ? `<span class="status-tag indexing">分析中 ${Math.round((book.index_progress || 0) * 100)}%</span>`
       : status === "error"
       ? `<span class="status-tag error">分析失败</span>`
       : `<span class="status-tag ready">已就绪</span>`;
+    const progressBar = status === "indexing"
+      ? `<div class="book-progress-bar"><div class="book-progress-fill" style="width:${Math.round((book.index_progress || 0) * 100)}%"></div></div>`
+      : "";
     const sourceTag = book.source === "upload"
       ? '<span class="source-tag upload">本地上传</span>'
       : '<span class="source-tag local">原书</span>';
@@ -267,6 +276,7 @@ async function loadBooks() {
           ${sourceTag}
           ${isActive ? "<span class='mini-tag'>当前工作本</span>" : ""}
         </div>
+        ${progressBar}
         <h3>${escapeHtml(book.title)}</h3>
         <div class="book-meta">ID：${escapeHtml(book.id)}</div>
         <div class="book-meta">章节数：${escapeHtml(book.chapter_count || "-")}</div>
@@ -278,7 +288,16 @@ async function loadBooks() {
 
   const indexedCount = books.filter((book) => book.indexed).length;
   setWorkspaceStatus(`书库 ${books.length} 本，已索引 ${indexedCount} 本`, indexedCount ? "ready" : "idle");
+
+  // 如果有书籍在索引中，轮询更新进度
+  const indexingBooks = books.filter((b) => b.status === "indexing");
+  if (indexingBooks.length > 0) {
+    clearTimeout(_booksPollTimer);
+    _booksPollTimer = setTimeout(() => loadBooks(), 2000);
+  }
 }
+
+let _booksPollTimer = null;
 
 async function loadStorageStats() {
   try {
@@ -967,6 +986,18 @@ function bindEvents() {
       loadDetailGraph(router.currentBookId);
     }
   });
+  $("#detail-refresh-artifact")?.addEventListener("click", () => {
+    if (router.currentBookId) {
+      loadDetailArtifacts(router.currentBookId, detailArtifactState.selectedName)
+        .catch((error) => handleActionError(error, "#detail-artifact-summary", "产物加载失败"));
+    }
+  });
+  $("#detail-artifact-select")?.addEventListener("change", (event) => {
+    if (router.currentBookId) {
+      loadDetailArtifact(router.currentBookId, event.target.value)
+        .catch((error) => handleActionError(error, "#detail-artifact-summary", "产物加载失败"));
+    }
+  });
   $("#graph-center")?.addEventListener("change", () => {
     loadGraph().catch((error) => handleActionError(error, "#graph-detail", "图谱加载失败"));
   });
@@ -1072,16 +1103,19 @@ function navigateTo(path) {
 function showLibraryView() {
   $("#book-detail-view").hidden = true;
   $(".tab-bar").hidden = false;
+  detailArtifactState.bookId = null;
   stopPollingStatus();
 }
 
 async function showBookDetail(bookId) {
   $("#book-detail-view").hidden = false;
   $(".tab-bar").hidden = true;
+  detailArtifactState.bookId = bookId;
 
   // 设置标题和状态
   const books = await fetchJson("/api/books");
   const book = books.find(b => b.id === bookId);
+  loadDetailArtifacts(bookId).catch((error) => handleActionError(error, "#detail-artifact-summary", "产物加载失败"));
   if (book) {
     $("#detail-book-title").textContent = `《${book.title}》`;
     updateDetailStatus(book.status || "pending", 0);
@@ -1135,6 +1169,7 @@ function startPollingStatus(bookId) {
   const poll = async () => {
     const status = await fetchJson(`/api/books/${bookId}/status`);
     updateDetailStatus(status.status, status.progress);
+    loadDetailArtifacts(bookId).catch((error) => console.error("Failed to load artifacts:", error));
 
     if (status.status === "indexing") {
       pollingTimer = setTimeout(poll, 2000);
@@ -1142,6 +1177,7 @@ function startPollingStatus(bookId) {
       $("#detail-progress").hidden = true;
       $("#detail-content").hidden = false;
       await loadDetailGraph(bookId);
+      await loadDetailArtifacts(bookId);
     }
   };
   poll();
@@ -1154,13 +1190,99 @@ function stopPollingStatus() {
   }
 }
 
+function renderDetailArtifactCatalog() {
+  const select = $("#detail-artifact-select");
+  const summary = $("#detail-artifact-summary");
+  if (!select || !summary) {
+    return;
+  }
+
+  const artifacts = detailArtifactState.catalog || [];
+  if (!artifacts.length) {
+    select.innerHTML = "";
+    summary.innerHTML = "<span class='detail-artifact-chip'>暂无可查看产物</span>";
+    return;
+  }
+
+  select.innerHTML = artifacts.map((artifact) => {
+    const countLabel = artifact.count == null ? "" : ` (${formatNumber(artifact.count)})`;
+    const selected = artifact.name === detailArtifactState.selectedName ? " selected" : "";
+    return `<option value="${escapeHtml(artifact.name)}"${selected}>${escapeHtml(artifact.label)}${escapeHtml(countLabel)}</option>`;
+  }).join("");
+
+  summary.innerHTML = artifacts.map((artifact) => {
+    const countLabel = artifact.count == null ? "" : ` ${formatNumber(artifact.count)} 条`;
+    const active = artifact.name === detailArtifactState.selectedName ? " active" : "";
+    return `<span class="detail-artifact-chip${active}">${escapeHtml(artifact.label)}${escapeHtml(countLabel)}</span>`;
+  }).join("");
+}
+
+function renderDetailArtifact(payload) {
+  const meta = $("#detail-artifact-meta");
+  const viewer = $("#detail-artifact-viewer");
+  if (!meta || !viewer) {
+    return;
+  }
+
+  const totalLabel = payload.total_count == null ? "对象" : `${formatNumber(payload.total_count)} 条`;
+  const previewLabel = payload.truncated ? "，当前显示前 20 条预览。" : "。";
+  meta.textContent = `${payload.artifact.label} · ${totalLabel}${previewLabel}`;
+  viewer.textContent = JSON.stringify(payload.content, null, 2);
+}
+
+async function loadDetailArtifact(bookId, artifactName) {
+  const viewer = $("#detail-artifact-viewer");
+  if (viewer) {
+    viewer.textContent = "正在加载产物...";
+  }
+  detailArtifactState.selectedName = artifactName;
+  renderDetailArtifactCatalog();
+  const payload = await fetchJson(`/api/books/${bookId}/artifacts/${artifactName}`);
+  if (detailArtifactState.bookId !== bookId) {
+    return;
+  }
+  renderDetailArtifact(payload);
+}
+
+async function loadDetailArtifacts(bookId, preferredName = null) {
+  detailArtifactState.bookId = bookId;
+  if (preferredName) {
+    detailArtifactState.selectedName = preferredName;
+  }
+
+  const payload = await fetchJson(`/api/books/${bookId}/artifacts`);
+  if (detailArtifactState.bookId !== bookId) {
+    return;
+  }
+
+  detailArtifactState.catalog = payload.artifacts || [];
+  if (!detailArtifactState.catalog.length) {
+    renderDetailArtifactCatalog();
+    const meta = $("#detail-artifact-meta");
+    const viewer = $("#detail-artifact-viewer");
+    if (meta) {
+      meta.textContent = "当前还没有可查看的中间产物。";
+    }
+    if (viewer) {
+      viewer.textContent = "等待产物生成...";
+    }
+    return;
+  }
+
+  if (!detailArtifactState.catalog.some((artifact) => artifact.name === detailArtifactState.selectedName)) {
+    detailArtifactState.selectedName = detailArtifactState.catalog[0].name;
+  }
+  renderDetailArtifactCatalog();
+  await loadDetailArtifact(bookId, detailArtifactState.selectedName);
+}
+
 async function loadDetailGraph(bookId) {
   // 获取章节范围
   const scopeStart = parseInt($("#detail-graph-scope-start")?.value) || 1;
   const scopeEnd = parseInt($("#detail-graph-scope-end")?.value) || 14;
 
   try {
-    const data = await fetchJson(`/api/books/${bookId}/graph?scope_start=${scopeStart}&scope_end=${scopeEnd}`);
+    const data = await fetchJson(`/api/books/${bookId}/graph?chapter_start=${scopeStart}&chapter_end=${scopeEnd}`);
     renderDetailGraph(data);
     renderCharacterCards(data.characters || []);
     renderDetailTimeline(data.events || []);
