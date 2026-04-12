@@ -48,6 +48,10 @@ def create_app() -> FastAPI:
     async def get_storage_stats():
         return service.get_storage_stats()
 
+    @app.get("/api/token-stats")
+    async def get_token_stats():
+        return service.get_token_stats()
+
     @app.delete("/api/books/{book_id}")
     async def delete_book(book_id: str):
         try:

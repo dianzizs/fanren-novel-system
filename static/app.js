@@ -29,11 +29,18 @@ function escapeHtml(value) {
 }
 
 function formatBytes(bytes) {
+  if (!Number.isFinite(bytes) || bytes < 0) return "无效";
   if (bytes === 0) return "0 B";
   const k = 1024;
   const sizes = ["B", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+}
+
+function formatNumber(num) {
+  if (!Number.isFinite(num) || num < 0) return "无效";
+  if (num === 0) return "0";
+  return num.toLocaleString();
 }
 
 function formatMultiline(value) {
@@ -268,6 +275,18 @@ async function loadStorageStats() {
     $("#uploads-size").textContent = formatBytes(stats.total_uploads_size || 0);
   } catch (error) {
     console.error("Failed to load storage stats:", error);
+    $("#index-size").textContent = "加载失败";
+    $("#uploads-size").textContent = "加载失败";
+  }
+}
+
+async function loadTokenStats() {
+  try {
+    const stats = await fetchJson("/api/token-stats");
+    $("#token-total").textContent = formatNumber(stats.total_tokens || 0);
+  } catch (error) {
+    console.error("Failed to load token stats:", error);
+    $("#token-total").textContent = "加载失败";
   }
 }
 
@@ -429,6 +448,7 @@ async function askQuestion() {
     }
 
     setWorkspaceStatus("证据回答已更新", "ready");
+    loadTokenStats().catch(console.error);
   } catch (error) {
     handleActionError(error, "#ask-result", "问答生成失败");
   } finally {
@@ -467,6 +487,7 @@ async function continueStory() {
     });
     $("#continuation-result").textContent = result.answer || "暂无结果。";
     setWorkspaceStatus("续写结果已更新", "ready");
+    loadTokenStats().catch(console.error);
   } catch (error) {
     handleActionError(error, "#continuation-result", "续写生成失败");
   } finally {
@@ -992,6 +1013,7 @@ async function bootstrap() {
   try {
     await loadBooks();
     await loadStorageStats();
+    await loadTokenStats();
     await loadReader(1);
     await loadDashboard();
     await loadGraph();

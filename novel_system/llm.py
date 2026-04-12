@@ -11,6 +11,13 @@ from .config import AppConfig
 THINK_TAG_RE = re.compile(r"<think>.*?</think>\s*", re.DOTALL | re.IGNORECASE)
 
 
+class LLMResponse:
+    """LLM chat response with optional token usage"""
+    def __init__(self, content: str, usage: dict[str, int] | None = None) -> None:
+        self.content = content
+        self.usage = usage or {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+
+
 class MiniMaxClient:
     def __init__(self, config: AppConfig) -> None:
         self.api_key = config.minimax_api_key
@@ -27,7 +34,7 @@ class MiniMaxClient:
         *,
         temperature: float = 0.2,
         max_tokens: int = 900,
-    ) -> str:
+    ) -> str | LLMResponse:
         if not self.enabled:
             raise RuntimeError("MINIMAX_API_KEY is not configured")
         response = requests.post(
@@ -47,5 +54,9 @@ class MiniMaxClient:
         response.raise_for_status()
         payload: dict[str, Any] = response.json()
         content = payload["choices"][0]["message"]["content"]
-        return THINK_TAG_RE.sub("", content).strip()
+        usage = payload.get("usage")
+        result = THINK_TAG_RE.sub("", content).strip()
+        if usage:
+            return LLMResponse(content=result, usage=usage)
+        return result
 

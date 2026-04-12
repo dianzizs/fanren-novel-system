@@ -10,7 +10,7 @@ from typing import Any
 from .config import AppConfig
 from .fanren_heuristics import heuristic_answer, heuristic_continuation
 from .indexing import ALIAS_MAP, COMMON_SURNAMES, BookIndexRepository, PERSON_RE, TITLE_PERSON_RE, scope_filter
-from .llm import MiniMaxClient
+from .llm import LLMResponse, MiniMaxClient
 from .models import (
     AskRequest,
     AskResponse,
@@ -156,6 +156,7 @@ class NovelSystemService:
         self.llm = MiniMaxClient(self.config)
         self.planner = RuleBasedPlanner()
         self.session_memory: dict[str, list[ConversationTurn]] = {}
+        self.token_usage: dict[str, dict[str, int]] = defaultdict(lambda: {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0})
         self.bootstrap_default_book()
 
     def bootstrap_default_book(self) -> None:
@@ -206,6 +207,39 @@ class NovelSystemService:
         if uploads_path.exists():
             stats["total_uploads_size"] = sum(f.stat().st_size for f in uploads_path.rglob("*") if f.is_file())
         return stats
+
+    def _record_token_usage(self, book_id: str, usage: dict[str, int]) -> None:
+        """记录 LLM token 使用量"""
+        if not usage:
+            return
+        self.token_usage[book_id]["prompt_tokens"] += usage.get("prompt_tokens", 0)
+        self.token_usage[book_id]["completion_tokens"] += usage.get("completion_tokens", 0)
+        self.token_usage[book_id]["total_tokens"] += usage.get("total_tokens", 0)
+
+    def get_token_stats(self) -> dict[str, Any]:
+        """获取 token 统计信息"""
+        books_map = {m["id"]: m["title"] for m in self.repo.list_books()}
+        books = []
+        total_prompt = 0
+        total_completion = 0
+        total_tokens = 0
+        for book_id, usage in self.token_usage.items():
+            books.append({
+                "book_id": book_id,
+                "title": books_map.get(book_id, book_id),
+                "prompt_tokens": usage["prompt_tokens"],
+                "completion_tokens": usage["completion_tokens"],
+                "total_tokens": usage["total_tokens"],
+            })
+            total_prompt += usage["prompt_tokens"]
+            total_completion += usage["completion_tokens"]
+            total_tokens += usage["total_tokens"]
+        return {
+            "books": books,
+            "total_prompt_tokens": total_prompt,
+            "total_completion_tokens": total_completion,
+            "total_tokens": total_tokens,
+        }
 
     def delete_book(self, book_id: str) -> dict[str, Any]:
         """删除书目及其关联数据"""
@@ -327,6 +361,7 @@ class NovelSystemService:
         heuristic = heuristic_answer(request.user_query, request.scope, memory)
         if planner.task_type == "continuation":
             answer, _ = self._execute_continuation_skill(
+                book_id,
                 query=request.user_query,
                 hits=hits,
                 memory=memory,
@@ -336,6 +371,7 @@ class NovelSystemService:
             answer = heuristic
         else:
             answer = self._execute_answer_skill(
+                book_id,
                 planner=planner,
                 query=request.user_query,
                 hits=hits,
@@ -376,6 +412,7 @@ class NovelSystemService:
             request.test_harness.get("simulate"),
         )
         answer, validation = self._execute_continuation_skill(
+            book_id,
             query=request.user_query,
             hits=hits,
             memory=memory,
@@ -797,6 +834,7 @@ class NovelSystemService:
 
     def _execute_answer_skill(
         self,
+        book_id: str,
         *,
         planner: PlannerOutput,
         query: str,
@@ -848,12 +886,17 @@ class NovelSystemService:
             },
         ]
         try:
-            return self.llm.chat(messages, temperature=0.15, max_tokens=900)
+            result = self.llm.chat(messages, temperature=0.15, max_tokens=900)
+            if isinstance(result, LLMResponse):
+                self._record_token_usage(book_id, result.usage)
+                return result.content
+            return result
         except Exception:
             return fallback
 
     def _execute_continuation_skill(
         self,
+        book_id: str,
         *,
         query: str,
         hits: list[RetrievalHit],
@@ -902,7 +945,12 @@ class NovelSystemService:
             },
         ]
         try:
-            answer = self.llm.chat(messages, temperature=0.6, max_tokens=700)
+            result = self.llm.chat(messages, temperature=0.6, max_tokens=700)
+            if isinstance(result, LLMResponse):
+                self._record_token_usage(book_id, result.usage)
+                answer = result.content
+            else:
+                answer = result
         except Exception:
             answer = fallback
         if OUT_OF_SCOPE_POWER_RE.search(answer):
