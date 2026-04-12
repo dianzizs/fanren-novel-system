@@ -123,7 +123,7 @@ class BookIndexRepository:
         import shutil
         shutil.rmtree(book_dir)
 
-    def ensure_book_manifest(self, book_id: str, title: str, source_path: str) -> dict[str, Any]:
+    def ensure_book_manifest(self, book_id: str, title: str, source_path: str, source: str = "local") -> dict[str, Any]:
         book_dir = self._book_dir(book_id)
         book_dir.mkdir(parents=True, exist_ok=True)
         manifest_path = book_dir / "manifest.json"
@@ -134,6 +134,7 @@ class BookIndexRepository:
             "id": book_id,
             "title": title,
             "source_path": source_path,
+            "source": source,
             "chapter_count": 0,
             "chunk_count": 0,
             "indexed": False,

@@ -44,6 +44,17 @@ def create_app() -> FastAPI:
     async def list_books():
         return [book.model_dump() for book in service.list_books()]
 
+    @app.get("/api/storage-stats")
+    async def get_storage_stats():
+        return service.get_storage_stats()
+
+    @app.delete("/api/books/{book_id}")
+    async def delete_book(book_id: str):
+        try:
+            return service.delete_book(book_id)
+        except FileNotFoundError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+
     @app.post("/api/books")
     async def register_book(
         title: str | None = Form(None),
@@ -56,13 +67,13 @@ def create_app() -> FastAPI:
             target_path = upload_dir / file.filename
             target_path.write_bytes(await file.read())
             book_id = Path(file.filename).stem.replace(" ", "-").lower()
-            manifest = service.repo.ensure_book_manifest(book_id, title or file.filename, str(target_path))
+            manifest = service.repo.ensure_book_manifest(book_id, title or file.filename, str(target_path), source="upload")
             return manifest
         chosen_path = Path(file_path) if file_path else config.default_book_path
         if not chosen_path.exists():
             raise HTTPException(status_code=404, detail="book file not found")
         book_id = chosen_path.stem.replace(" ", "-").replace("(", "").replace(")", "").lower()
-        manifest = service.repo.ensure_book_manifest(book_id, title or chosen_path.stem, str(chosen_path))
+        manifest = service.repo.ensure_book_manifest(book_id, title or chosen_path.stem, str(chosen_path), source="local")
         return manifest
 
     @app.post("/api/books/{book_id}/index")
@@ -103,6 +114,17 @@ def create_app() -> FastAPI:
         scope = Scope(chapters=[chapter_start, chapter_end]) if chapter_start and chapter_end else Scope()
         return [item.model_dump() for item in service.get_timeline(book_id, scope)]
 
+    @app.get("/api/books/{book_id}/graph")
+    async def get_graph(
+        book_id: str,
+        chapter_start: int | None = None,
+        chapter_end: int | None = None,
+        center: str | None = None,
+        limit: int = 18,
+    ):
+        scope = Scope(chapters=[chapter_start, chapter_end]) if chapter_start and chapter_end else Scope()
+        return service.get_interactive_graph(book_id, scope, center=center, limit=limit)
+
     @app.get("/api/dashboard")
     async def get_dashboard():
         return service.get_dashboard_data().model_dump()
@@ -111,4 +133,3 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
-
