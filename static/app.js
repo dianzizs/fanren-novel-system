@@ -962,6 +962,11 @@ function bindEvents() {
       .then(() => setWorkspaceStatus("图谱已刷新", "ready"))
       .catch((error) => handleActionError(error, "#graph-detail", "图谱加载失败"));
   });
+  $("#detail-refresh-graph")?.addEventListener("click", () => {
+    if (router.currentBookId) {
+      loadDetailGraph(router.currentBookId);
+    }
+  });
   $("#graph-center")?.addEventListener("change", () => {
     loadGraph().catch((error) => handleActionError(error, "#graph-detail", "图谱加载失败"));
   });
@@ -1065,13 +1070,162 @@ function navigateTo(path) {
 }
 
 function showLibraryView() {
-  // 显示藏书列表视图
-  // 隐藏详情视图
+  $("#book-detail-view").hidden = true;
+  $(".tab-bar").hidden = false;
+  stopPollingStatus();
 }
 
-function showBookDetail(bookId) {
-  // 显示详情视图
-  // 隐藏藏书列表视图
+async function showBookDetail(bookId) {
+  $("#book-detail-view").hidden = false;
+  $(".tab-bar").hidden = true;
+
+  // 设置标题和状态
+  const books = await fetchJson("/api/books");
+  const book = books.find(b => b.id === bookId);
+  if (book) {
+    $("#detail-book-title").textContent = `《${book.title}》`;
+    updateDetailStatus(book.status || "pending", 0);
+  }
+
+  // 如果已就绪，加载图谱
+  if (book && book.status === "ready") {
+    $("#detail-progress").hidden = true;
+    $("#detail-content").hidden = false;
+    await loadDetailGraph(bookId);
+  } else if (book && book.status === "indexing") {
+    // 轮询状态
+    startPollingStatus(bookId);
+  } else {
+    $("#detail-progress").hidden = true;
+    $("#detail-content").hidden = true;
+  }
+
+  // 返回按钮
+  $("#back-to-library").onclick = () => navigateTo("#/");
+}
+
+function updateDetailStatus(status, progress) {
+  const statusEl = $("#detail-book-status");
+  const progressEl = $("#detail-progress");
+  const fillEl = $("#progress-fill");
+  const msgEl = $("#progress-message");
+
+  statusEl.textContent = {
+    pending: "等待分析",
+    indexing: "分析中",
+    ready: "已就绪",
+    error: "分析失败"
+  }[status] || status;
+
+  if (status === "indexing") {
+    progressEl.hidden = false;
+    fillEl.style.width = `${(progress * 100).toFixed(0)}%`;
+    msgEl.textContent = `正在分析... (${(progress * 100).toFixed(0)}%)`;
+  } else if (status === "ready") {
+    progressEl.hidden = true;
+  }
+}
+
+let pollingTimer = null;
+
+function startPollingStatus(bookId) {
+  $("#detail-progress").hidden = false;
+  $("#detail-content").hidden = true;
+
+  const poll = async () => {
+    const status = await fetchJson(`/api/books/${bookId}/status`);
+    updateDetailStatus(status.status, status.progress);
+
+    if (status.status === "indexing") {
+      pollingTimer = setTimeout(poll, 2000);
+    } else if (status.status === "ready") {
+      $("#detail-progress").hidden = true;
+      $("#detail-content").hidden = false;
+      await loadDetailGraph(bookId);
+    }
+  };
+  poll();
+}
+
+function stopPollingStatus() {
+  if (pollingTimer) {
+    clearTimeout(pollingTimer);
+    pollingTimer = null;
+  }
+}
+
+async function loadDetailGraph(bookId) {
+  // 获取章节范围
+  const scopeStart = parseInt($("#detail-graph-scope-start")?.value) || 1;
+  const scopeEnd = parseInt($("#detail-graph-scope-end")?.value) || 14;
+
+  try {
+    const data = await fetchJson(`/api/books/${bookId}/graph?scope_start=${scopeStart}&scope_end=${scopeEnd}`);
+    renderDetailGraph(data);
+    renderCharacterCards(data.characters || []);
+    renderDetailTimeline(data.events || []);
+  } catch (error) {
+    console.error("Failed to load graph:", error);
+  }
+}
+
+function renderDetailGraph(data) {
+  const canvas = $("#detail-knowledge-graph-canvas");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+
+  // 简化实现：清空画布并绘制节点
+  canvas.width = canvas.offsetWidth * window.devicePixelRatio;
+  canvas.height = canvas.offsetHeight * window.devicePixelRatio;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (!data.nodes) return;
+
+  // 绘制节点（简化版本）
+  const nodes = data.nodes;
+  const centerX = canvas.width / 2;
+  const centerY = canvas.height / 2;
+  const radius = Math.min(centerX, centerY) * 0.6;
+
+  nodes.forEach((node, i) => {
+    const angle = (i / nodes.length) * Math.PI * 2;
+    const x = centerX + radius * Math.cos(angle);
+    const y = centerY + radius * Math.sin(angle);
+
+    ctx.beginPath();
+    ctx.arc(x, y, 20, 0, Math.PI * 2);
+    ctx.fillStyle = node.type === "character" ? "#74e1b8" : "#ff7e8b";
+    ctx.fill();
+    ctx.strokeStyle = "#fff";
+    ctx.stroke();
+
+    ctx.fillStyle = "#fff";
+    ctx.font = "12px Noto Sans SC";
+    ctx.textAlign = "center";
+    ctx.fillText(node.name, x, y + 30);
+  });
+}
+
+function renderCharacterCards(characters) {
+  const container = $("#detail-character-cards");
+  if (!container) return;
+  container.innerHTML = characters.map(char => `
+    <div class="character-card">
+      <strong>${escapeHtml(char.name)}</strong>
+      <p>出现次数：${char.count || 0}</p>
+    </div>
+  `).join("");
+}
+
+function renderDetailTimeline(events) {
+  const container = $("#detail-timeline");
+  if (!container) return;
+  container.innerHTML = events.map(evt => `
+    <div class="timeline-card">
+      <strong>第${evt.chapter}章</strong>
+      <p>${escapeHtml(evt.description)}</p>
+    </div>
+  `).join("");
 }
 
 async function bootstrap() {
