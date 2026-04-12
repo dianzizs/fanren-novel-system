@@ -1,6 +1,6 @@
-# Fanren Novel System
+# NovelQA System
 
-一个基于 FastAPI 构建的中文小说问答系统，专为《凡人修仙传》等长篇武侠/仙侠小说设计。系统提供智能问答、情节续写、人物关系图谱可视化等功能。
+一个基于 FastAPI 构建的通用中文小说问答系统，支持任意长篇小说的智能分析。系统提供智能问答、情节续写、人物关系图谱可视化等功能。
 
 ## 功能特性
 
@@ -46,10 +46,15 @@ MINIMAX_API_KEY=your_api_key_here
 MINIMAX_BASE_URL=https://api.minimax.chat/v1
 MINIMAX_CHAT_MODEL=MiniMax-m2.7-HighSpeed
 
-DEFAULT_BOOK_ID=fanren-1-500
-DEFAULT_BOOK_TITLE=凡人修仙传（1-500章）
-DEFAULT_BOOK_PATH=./凡人修仙传(1-500章).txt
+# 默认书籍配置（可修改）
+DEFAULT_BOOK_ID=default-book
+DEFAULT_BOOK_TITLE=默认小说
+DEFAULT_BOOK_PATH=default-book.txt
 ```
+
+### 上传小说
+
+将你的小说文本文件（TXT 格式）放到项目根目录，例如 `my-novel.txt`。
 
 ### 构建索引
 
@@ -67,6 +72,8 @@ python scripts/run_api.py
 
 ### 运行评测
 
+准备评测用例文件 `eval_cases.jsonl`，然后运行：
+
 ```bash
 python scripts/run_eval.py
 ```
@@ -76,7 +83,7 @@ python scripts/run_eval.py
 ## 项目结构
 
 ```
-fanren-novel-system/
+novelqa-system/
 ├── novel_system/          # 核心模块
 │   ├── __init__.py
 │   ├── api.py            # FastAPI 应用和路由
@@ -87,7 +94,7 @@ fanren-novel-system/
 │   ├── planner.py        # 查询规划和重写
 │   ├── retrieval.py      # 混合检索引擎
 │   ├── service.py        # 核心业务逻辑
-│   └── fanren_heuristics.py  # 小说特定规则
+│   └── novel_heuristics.py  # 小说特定规则（可选）
 ├── scripts/              # 脚本工具
 │   ├── build_index.py    # 索引构建脚本
 │   ├── run_api.py        # API 启动脚本
@@ -116,7 +123,7 @@ fanren-novel-system/
 
 ```json
 {
-  "user_query": "韩立是怎么得到小瓶的？",
+  "user_query": "主角是怎么得到关键道具的？",
   "scope": {"chapters": [1, 50]},
   "conversation_history": [],
   "top_k": 6
@@ -128,7 +135,7 @@ fanren-novel-system/
 
 ```json
 {
-  "user_query": "韩立进入七玄门后的第一次历练",
+  "user_query": "主角进入门派后的第一次历练",
   "scope": {"chapters": [1, 100]},
   "desired_length": [500, 1000]
 }
@@ -156,8 +163,8 @@ fanren-novel-system/
 
 系统会自动对用户查询进行优化：
 
-1. **别名扩展**: "二愣子" → "韩立 二愣子"
-2. **指代消解**: "那个瓶子" → "神秘小瓶"
+1. **别名扩展**: 支持人物别名映射，如"二愣子"自动扩展为包含主角真名
+2. **指代消解**: 自动识别"那个瓶子"、"这个功法"等指代
 3. **上下文提取**: 从对话历史中提取关键人物和实体
 4. **章节引用**: 提取章节号并扩展到查询中
 
@@ -173,22 +180,23 @@ fanren-novel-system/
 
 ## 开发指南
 
-### 添加新的小说适配
+### 添加小说特定规则（可选）
 
-在 `novel_system/fanren_heuristics.py` 中添加小说特定的规则：
+在 `novel_system/novel_heuristics.py` 中添加小说特定的规则：
 
 ```python
-# 人物别名映射
-ALIAS_EXPANSIONS = {
-    "韩立": ["二愣子", "韩师弟"],
-    # ...
-}
+def heuristic_answer(query: str, scope: Scope, memory: MemoryState) -> str | None:
+    q = query.strip()
+    # 添加特定问题的快速响应
+    if "某个特定问题" in q:
+        return "根据第X章的答案..."
+    return None
 
-# 知识图谱种子
-GRAPH_CANON_SEEDS = {
-    "韩立": "主角，性格沉稳谨慎",
-    # ...
-}
+def heuristic_continuation(query: str) -> str | None:
+    # 添加续写限制规则
+    if "超出设定" in query:
+        return "此要求超出当前设定范围，无法续写。"
+    return None
 ```
 
 ### 扩展检索目标

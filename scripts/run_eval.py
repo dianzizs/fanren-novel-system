@@ -11,7 +11,7 @@ if str(ROOT) not in sys.path:
 from novel_system.models import AskRequest, ContinueRequest, Scope
 from novel_system.service import create_service
 
-import fanren_eval_runner_template as eval_runner
+import eval_runner_template as eval_runner
 
 
 def load_cases(path: Path) -> list[dict]:
@@ -84,7 +84,7 @@ def main() -> None:
     service = create_service()
     service.index_default_book()
 
-    cases_path = ROOT / "fanren_eval_cases_v1.jsonl"
+    cases_path = ROOT / "eval_cases.jsonl"
     predictions_path = ROOT / "data" / "runtime" / "predictions.jsonl"
     report_path = ROOT / "data" / "runtime" / "eval_report.json"
     predictions_path.parent.mkdir(parents=True, exist_ok=True)

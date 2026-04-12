@@ -45,12 +45,12 @@ class AppConfig:
             data_dir=data_dir,
             runtime_dir=runtime_dir,
             books_dir=books_dir,
-            default_book_id=os.getenv("DEFAULT_BOOK_ID", "fanren-1-500"),
-            default_book_title=os.getenv("DEFAULT_BOOK_TITLE", "凡人修仙传（1-500章）"),
+            default_book_id=os.getenv("DEFAULT_BOOK_ID", "default-book"),
+            default_book_title=os.getenv("DEFAULT_BOOK_TITLE", "默认小说"),
             default_book_path=Path(
                 os.getenv(
                     "DEFAULT_BOOK_PATH",
-                    str(ROOT_DIR / "凡人修仙传(1-500章).txt"),
+                    str(ROOT_DIR / "default-book.txt"),
                 )
             ),
             minimax_api_key=os.getenv("MINIMAX_API_KEY", "").strip(),
