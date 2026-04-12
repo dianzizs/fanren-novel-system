@@ -123,6 +123,14 @@ class BookIndexRepository:
         import shutil
         shutil.rmtree(book_dir)
 
+    def update_book_manifest(self, book_id: str, manifest: dict[str, Any]) -> None:
+        """更新书籍 manifest"""
+        book_dir = self._book_dir(book_id)
+        manifest_path = book_dir / "manifest.json"
+        if not manifest_path.exists():
+            return
+        manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
     def ensure_book_manifest(self, book_id: str, title: str, source_path: str, source: str = "local") -> dict[str, Any]:
         book_dir = self._book_dir(book_id)
         book_dir.mkdir(parents=True, exist_ok=True)
