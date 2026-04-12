@@ -115,6 +115,14 @@ class BookIndexRepository:
                 books.append(json.load(handle))
         return books
 
+    def remove_book(self, book_id: str) -> None:
+        """从 manifest 中移除书目"""
+        book_dir = self._book_dir(book_id)
+        if not book_dir.exists():
+            return
+        import shutil
+        shutil.rmtree(book_dir)
+
     def ensure_book_manifest(self, book_id: str, title: str, source_path: str) -> dict[str, Any]:
         book_dir = self._book_dir(book_id)
         book_dir.mkdir(parents=True, exist_ok=True)
