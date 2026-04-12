@@ -354,7 +354,45 @@
         </div>
       </section>
     </main>
+  <div id="book-detail-view" class="book-detail-view" hidden>
+  <div class="detail-header">
+    <button id="back-to-library" class="secondary">← 返回藏书</button>
+    <h2 id="detail-book-title">《》</h2>
+    <span id="detail-book-status" class="status-tag">等待分析</span>
   </div>
+  <div class="detail-progress" id="detail-progress" hidden>
+    <div class="progress-bar">
+      <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
+    </div>
+    <p id="progress-message">正在分析...</p>
+  </div>
+  <div class="detail-content" id="detail-content" hidden>
+    <div class="detail-sidebar">
+      <h3>人物卡片</h3>
+      <div id="detail-character-cards" class="character-list"></div>
+    </div>
+    <div class="detail-main">
+      <div class="graph-toolbar">
+        <div class="graph-control">
+          <label for="detail-graph-scope-start">章节范围</label>
+          <div class="inline-fields compact">
+            <input id="detail-graph-scope-start" type="number" value="1" min="1" />
+            <span>至</span>
+            <input id="detail-graph-scope-end" type="number" value="14" min="1" />
+          </div>
+        </div>
+        <button id="detail-refresh-graph" class="secondary">刷新图谱</button>
+      </div>
+      <div class="graph-stage">
+        <canvas id="detail-knowledge-graph-canvas"></canvas>
+      </div>
+    </div>
+    <div class="detail-sidebar-right">
+      <h3>事件时间线</h3>
+      <div id="detail-timeline" class="timeline-board"></div>
+    </div>
+  </div>
+</div>
 
   <script src="/static/app.js"></script>
 </body>

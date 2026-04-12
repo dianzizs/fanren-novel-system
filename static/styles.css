@@ -1082,3 +1082,61 @@ input::placeholder {
     scroll-behavior: auto !important;
   }
 }
+
+/* 详情页 */
+.book-detail-view {
+  display: grid;
+  gap: 16px;
+}
+
+.detail-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  background: var(--panel);
+  border-radius: var(--radius-lg);
+}
+
+.detail-header h2 {
+  flex: 1;
+}
+
+.detail-progress {
+  padding: 20px;
+  background: var(--panel);
+  border-radius: var(--radius-lg);
+}
+
+.progress-bar {
+  height: 8px;
+  background: var(--surface-strong);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-warm));
+  transition: width 0.3s ease;
+}
+
+.detail-content {
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr) 280px;
+  gap: 16px;
+}
+
+.detail-sidebar,
+.detail-sidebar-right {
+  padding: 16px;
+  background: var(--panel);
+  border-radius: var(--radius-lg);
+  max-height: 600px;
+  overflow: auto;
+}
+
+.detail-main {
+  display: grid;
+  gap: 16px;
+}
