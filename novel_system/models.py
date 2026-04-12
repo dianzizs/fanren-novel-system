@@ -88,6 +88,7 @@ class BookInfo(BaseModel):
     id: str
     title: str
     source_path: str
+    source: Literal["upload", "local"] = "local"
     chapter_count: int = 0
     chunk_count: int = 0
     indexed: bool = False
