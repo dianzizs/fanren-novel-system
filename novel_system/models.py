@@ -93,6 +93,8 @@ class BookInfo(BaseModel):
     chunk_count: int = 0
     indexed: bool = False
     indexed_at: datetime | None = None
+    status: Literal["pending", "indexing", "ready", "error"] = "pending"
+    index_progress: float = 0.0
 
 
 class AskResponse(BaseModel):
