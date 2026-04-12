@@ -180,6 +180,8 @@ class NovelSystemService:
                     indexed=manifest.get("indexed", False),
                     indexed_at=datetime.fromisoformat(indexed_at) if indexed_at else None,
                     source=manifest.get("source", "local"),
+                    status=manifest.get("status", "pending"),
+                    index_progress=manifest.get("index_progress", 0.0),
                 )
             )
         return books
@@ -240,6 +242,59 @@ class NovelSystemService:
             "total_completion_tokens": total_completion,
             "total_tokens": total_tokens,
         }
+
+    def get_book_status(self, book_id: str) -> dict[str, Any]:
+        """获取书籍索引状态"""
+        manifest = next((book for book in self.repo.list_books() if book["id"] == book_id), None)
+        if not manifest:
+            raise FileNotFoundError(f"Book {book_id} not found")
+        return {
+            "book_id": book_id,
+            "status": manifest.get("status", "pending"),
+            "progress": manifest.get("index_progress", 0.0),
+            "message": self._get_status_message(manifest),
+        }
+
+    def _get_status_message(self, manifest: dict[str, Any]) -> str:
+        """获取状态描述"""
+        status = manifest.get("status", "pending")
+        if status == "pending":
+            return "等待开始分析"
+        elif status == "indexing":
+            progress = manifest.get("index_progress", 0)
+            return f"正在分析... ({int(progress * 100)}%)"
+        elif status == "ready":
+            return "分析完成"
+        elif status == "error":
+            return "分析失败"
+        return "未知状态"
+
+    def set_book_indexing(self, book_id: str, status: str, progress: float = 0.0) -> None:
+        """更新书籍索引状态"""
+        manifest = next((book for book in self.repo.list_books() if book["id"] == book_id), None)
+        if not manifest:
+            return
+        manifest["status"] = status
+        manifest["index_progress"] = progress
+        if status == "ready":
+            manifest["indexed"] = True
+            manifest["indexed_at"] = datetime.now().isoformat()
+        self.repo.update_book_manifest(book_id, manifest)
+
+    def start_book_index(self, book_id: str) -> dict[str, Any]:
+        """开始索引书籍"""
+        manifest = next((book for book in self.repo.list_books() if book["id"] == book_id), None)
+        if not manifest:
+            raise FileNotFoundError(f"Book {book_id} not found")
+
+        if manifest.get("status") == "indexing":
+            return {"status": "indexing", "message": "正在分析中"}
+
+        if manifest.get("status") == "ready":
+            return {"status": "ready", "message": "已经分析完成"}
+
+        self.set_book_indexing(book_id, "indexing", 0.0)
+        return {"status": "indexing", "message": "开始分析"}
 
     def delete_book(self, book_id: str) -> dict[str, Any]:
         """删除书目及其关联数据"""
