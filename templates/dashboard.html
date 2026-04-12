@@ -3,76 +3,266 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Novel System Workspace</title>
+  <title>{{ default_book_title }} | 长篇小说工作台</title>
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body data-book-id="{{ default_book_id }}">
   <div class="app-shell">
-    <header class="hero">
-      <div>
+    <div id="live-status" class="sr-only" aria-live="polite"></div>
+
+    <header class="workspace-header">
+      <div class="workspace-copy">
         <p class="eyebrow">Long-form Fiction Workspace</p>
-        <h1>《{{ default_book_title }}》拆书 / 问答 / 续写系统</h1>
-        <p class="hero-copy">
-          围绕 ingestion、planner、retrieval、memory、validation 串起的长文本工作台。
-        </p>
+        <div class="workspace-title-row">
+          <div class="workspace-title-block">
+            <h1>《{{ default_book_title }}》多视图工作台</h1>
+            <p id="hero-subtitle" class="hero-copy">
+              把索引、阅读、关系图、续写和评测收进同一张桌面，适合长篇小说的拆书、问答和创作延展。
+            </p>
+          </div>
+          <div class="hero-actions">
+            <button id="index-book-btn" class="primary">重建索引</button>
+            <button id="reload-dashboard-btn" class="secondary">同步看板</button>
+          </div>
+        </div>
       </div>
-      <div class="hero-actions">
-        <button id="index-book-btn" class="primary">重建索引</button>
-        <button id="reload-dashboard-btn" class="secondary">刷新看板</button>
+
+      <div class="hero-strip">
+        <div class="hero-stat">
+          <span class="hero-label">当前书目</span>
+          <strong id="active-book-name">{{ default_book_title }}</strong>
+        </div>
+        <div class="hero-stat">
+          <span class="hero-label">阅读章节</span>
+          <strong id="active-chapter">第 1 章</strong>
+        </div>
+        <div class="hero-stat">
+          <span class="hero-label">检索范围</span>
+          <strong id="active-scope">1 - 14 章</strong>
+        </div>
+        <div class="hero-stat">
+          <span class="hero-label">运行状态</span>
+          <strong id="workspace-status" data-tone="ready">准备就绪</strong>
+        </div>
+      </div>
+
+      <div class="workflow-ribbon" aria-label="系统流程">
+        <span class="workflow-title">Pipeline</span>
+        <div class="workflow-steps">
+          <span>Ingest</span>
+          <span>Planner</span>
+          <span>Retrieval</span>
+          <span>Memory</span>
+          <span>Graph</span>
+          <span>Continuation</span>
+          <span>Eval</span>
+        </div>
       </div>
     </header>
 
-    <nav class="tab-bar">
-      <button class="tab active" data-tab="library">Library</button>
-      <button class="tab" data-tab="reader">Reader Workspace</button>
-      <button class="tab" data-tab="knowledge">Knowledge View</button>
-      <button class="tab" data-tab="continuation">Continuation Studio</button>
-      <button class="tab" data-tab="evaluation">Evaluation Dashboard</button>
+    <nav class="tab-bar" aria-label="工作区视图" role="tablist">
+      <button
+        class="tab active"
+        id="tab-trigger-library"
+        data-tab="library"
+        role="tab"
+        aria-selected="true"
+        aria-controls="tab-library"
+        tabindex="0"
+      >
+        <span class="tab-label">藏书</span>
+        <span class="tab-copy">Library</span>
+      </button>
+      <button
+        class="tab"
+        id="tab-trigger-reader"
+        data-tab="reader"
+        role="tab"
+        aria-selected="false"
+        aria-controls="tab-reader"
+        tabindex="-1"
+      >
+        <span class="tab-label">阅读台</span>
+        <span class="tab-copy">Reader</span>
+      </button>
+      <button
+        class="tab"
+        id="tab-trigger-knowledge"
+        data-tab="knowledge"
+        role="tab"
+        aria-selected="false"
+        aria-controls="tab-knowledge"
+        tabindex="-1"
+      >
+        <span class="tab-label">知识图</span>
+        <span class="tab-copy">Knowledge</span>
+      </button>
+      <button
+        class="tab"
+        id="tab-trigger-continuation"
+        data-tab="continuation"
+        role="tab"
+        aria-selected="false"
+        aria-controls="tab-continuation"
+        tabindex="-1"
+      >
+        <span class="tab-label">续写台</span>
+        <span class="tab-copy">Continuation</span>
+      </button>
+      <button
+        class="tab"
+        id="tab-trigger-evaluation"
+        data-tab="evaluation"
+        role="tab"
+        aria-selected="false"
+        aria-controls="tab-evaluation"
+        tabindex="-1"
+      >
+        <span class="tab-label">评测</span>
+        <span class="tab-copy">Evaluation</span>
+      </button>
     </nav>
 
     <main>
-      <section class="panel tab-panel active" id="tab-library">
+      <section
+        class="panel tab-panel active"
+        id="tab-library"
+        role="tabpanel"
+        aria-labelledby="tab-trigger-library"
+      >
         <div class="section-head">
-          <h2>Library</h2>
-          <p>当前项目书籍、索引状态与章节规模。</p>
+          <div>
+            <h2>藏书</h2>
+            <p>查看当前项目书目、索引状态、章节规模和切片数量。</p>
+          </div>
+        </div>
+        <div class="library-actions">
+          <div class="library-actions-left">
+            <button id="import-book-btn" class="primary">导入新书</button>
+            <button id="refresh-books-btn" class="secondary">刷新书库</button>
+          </div>
+          <div class="storage-stats" id="storage-stats">
+            <span>索引存储：<strong id="index-size">-</strong></span>
+            <span>上传文件：<strong id="uploads-size">-</strong></span>
+          </div>
         </div>
         <div id="book-cards" class="book-grid"></div>
       </section>
 
-      <section class="panel tab-panel" id="tab-reader">
+      <section
+        class="panel tab-panel"
+        id="tab-reader"
+        role="tabpanel"
+        aria-labelledby="tab-trigger-reader"
+        hidden
+      >
         <div class="section-head">
-          <h2>Reader Workspace</h2>
-          <p>左侧目录、中间正文、右侧 Ask Panel。</p>
+          <div>
+            <h2>阅读台</h2>
+            <p>左侧章节目录，中间正文与摘要，右侧证据式问答。</p>
+          </div>
         </div>
         <div class="reader-layout">
           <aside class="reader-sidebar">
-            <h3>章节目录</h3>
+            <div class="panel-head">
+              <div>
+                <p class="panel-kicker">Reader</p>
+                <h3>章节目录</h3>
+              </div>
+              <span class="panel-note">点击章节同步正文与摘要</span>
+            </div>
             <div id="chapter-tree" class="chapter-tree"></div>
           </aside>
+
           <article class="reader-pane">
-            <div id="reader-summary" class="summary-card"></div>
-            <div id="reader-content" class="reader-content"></div>
-          </article>
-          <aside class="ask-panel">
-            <h3>Ask Panel</h3>
-            <textarea id="ask-query" rows="6">韩立为什么会去参加七玄门测试？</textarea>
-            <div class="inline-fields">
-              <input id="scope-start" type="number" value="1" min="1" />
-              <span>到</span>
-              <input id="scope-end" type="number" value="14" min="1" />
+            <div id="reader-summary" class="summary-card">
+              <strong>正在加载章节摘要...</strong>
             </div>
+            <div id="reader-content" class="reader-content">正在加载正文...</div>
+          </article>
+
+          <aside class="ask-panel">
+            <div class="panel-head">
+              <div>
+                <p class="panel-kicker">Evidence</p>
+                <h3>证据问答</h3>
+              </div>
+              <span class="panel-note">回答会附带引用片段</span>
+            </div>
+
+            <label class="field-label" for="ask-query">问题</label>
+            <textarea
+              id="ask-query"
+              rows="6"
+              placeholder="问人物动机、情节因果或细节出处"
+            >韩立为什么会去参加七玄门测试？</textarea>
+
+            <div class="field-row">
+              <label class="field-label" for="scope-start">章节范围</label>
+              <div class="inline-fields">
+                <input id="scope-start" type="number" value="1" min="1" />
+                <span>至</span>
+                <input id="scope-end" type="number" value="14" min="1" />
+              </div>
+            </div>
+
             <button id="ask-btn" class="primary block">提问</button>
-            <div id="ask-result" class="answer-card"></div>
+
+            <div id="ask-result" class="answer-card">
+              <div class="feedback-card neutral">
+                <strong>等待提问</strong>
+                <p>输入问题并选择章节范围后，这里会显示答案和推理信号。</p>
+              </div>
+            </div>
             <div id="evidence-list" class="evidence-list"></div>
           </aside>
         </div>
       </section>
 
-      <section class="panel tab-panel" id="tab-knowledge">
+      <section
+        class="panel tab-panel"
+        id="tab-knowledge"
+        role="tabpanel"
+        aria-labelledby="tab-trigger-knowledge"
+        hidden
+      >
         <div class="section-head">
-          <h2>Knowledge View</h2>
-          <p>人物卡、时间线与结构化信息。</p>
+          <div>
+            <h2>知识图</h2>
+            <p>观察人物、事件与关系图谱，支持按章节范围聚焦。</p>
+          </div>
         </div>
+
+        <div class="graph-workspace">
+          <div class="graph-toolbar">
+            <div class="graph-control">
+              <label for="graph-scope-start">章节范围</label>
+              <div class="inline-fields compact">
+                <input id="graph-scope-start" type="number" value="1" min="1" />
+                <span>至</span>
+                <input id="graph-scope-end" type="number" value="14" min="1" />
+              </div>
+            </div>
+            <div class="graph-control">
+              <label for="graph-center">中心人物</label>
+              <select id="graph-center">
+                <option value="">自动选择</option>
+              </select>
+            </div>
+            <button id="refresh-graph-btn" class="secondary">刷新图谱</button>
+          </div>
+
+          <div class="graph-grid">
+            <div class="graph-stage">
+              <canvas id="knowledge-graph-canvas"></canvas>
+            </div>
+            <aside class="graph-detail" id="graph-detail">
+              <h3>节点详情</h3>
+              <p>点击节点查看摘要、章节范围和连接关系。</p>
+            </aside>
+          </div>
+        </div>
+
         <div class="knowledge-grid">
           <div>
             <h3>人物卡</h3>
@@ -85,30 +275,62 @@
         </div>
       </section>
 
-      <section class="panel tab-panel" id="tab-continuation">
+      <section
+        class="panel tab-panel"
+        id="tab-continuation"
+        role="tabpanel"
+        aria-labelledby="tab-trigger-continuation"
+        hidden
+      >
         <div class="section-head">
-          <h2>Continuation Studio</h2>
-          <p>约束驱动、多版本可扩展的续写工作区。</p>
+          <div>
+            <h2>续写台</h2>
+            <p>围绕指定章节范围生成可控续写，保持语气与信息边界。</p>
+          </div>
         </div>
+
         <div class="continuation-grid">
           <div class="constraint-box">
-            <h3>约束面板</h3>
-            <textarea id="continuation-query" rows="7">请基于前14章续写200到350字，写韩立带着刚打开的瓶子回屋后的心理和动作，不要剧透后文。</textarea>
+            <div class="panel-head">
+              <div>
+                <p class="panel-kicker">Continuation</p>
+                <h3>续写约束</h3>
+              </div>
+              <span class="panel-note">只基于当前范围生成</span>
+            </div>
+            <label class="field-label" for="continuation-query">指令</label>
+            <textarea id="continuation-query" rows="7">请基于前 14 章续写 400 到 550 字，写韩立带着刚打开的瓶子回屋后的心理和动作，不要剧透后文。</textarea>
             <button id="continue-btn" class="primary block">生成续写</button>
           </div>
+
           <div class="version-box">
-            <h3>生成结果</h3>
-            <div id="continuation-result" class="continuation-result"></div>
+            <div class="panel-head">
+              <div>
+                <p class="panel-kicker">Output</p>
+                <h3>生成结果</h3>
+              </div>
+            </div>
+            <div id="continuation-result" class="continuation-result">等待生成...</div>
           </div>
         </div>
       </section>
 
-      <section class="panel tab-panel" id="tab-evaluation">
+      <section
+        class="panel tab-panel"
+        id="tab-evaluation"
+        role="tabpanel"
+        aria-labelledby="tab-trigger-evaluation"
+        hidden
+      >
         <div class="section-head">
-          <h2>Evaluation Dashboard</h2>
-          <p>baseline 对比、失败案例与指标图表。</p>
+          <div>
+            <h2>评测</h2>
+            <p>对比基线结果、失败案例和核心指标。</p>
+          </div>
         </div>
+
         <div id="metric-grid" class="metric-grid"></div>
+
         <div class="evaluation-grid">
           <div>
             <h3>Baseline 对比</h3>
@@ -119,14 +341,20 @@
             <div id="failure-list" class="failure-list"></div>
           </div>
         </div>
+
         <div class="chart-box">
-          <h3>指标图表</h3>
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker">Metrics</p>
+              <h3>指标图表</h3>
+            </div>
+          </div>
           <pre id="chart-json" class="chart-json"></pre>
         </div>
       </section>
     </main>
   </div>
+
   <script src="/static/app.js"></script>
 </body>
 </html>
-
