@@ -71,13 +71,13 @@ def create_app() -> FastAPI:
             target_path = upload_dir / file.filename
             target_path.write_bytes(await file.read())
             book_id = Path(file.filename).stem.replace(" ", "-").lower()
-            manifest = service.repo.ensure_book_manifest(book_id, title or file.filename, str(target_path), source="upload")
+            manifest = service.repo.ensure_book_manifest(book_id, title or file.filename, str(target_path), source="upload", status="pending")
             return manifest
         chosen_path = Path(file_path) if file_path else config.default_book_path
         if not chosen_path.exists():
             raise HTTPException(status_code=404, detail="book file not found")
         book_id = chosen_path.stem.replace(" ", "-").replace("(", "").replace(")", "").lower()
-        manifest = service.repo.ensure_book_manifest(book_id, title or chosen_path.stem, str(chosen_path), source="local")
+        manifest = service.repo.ensure_book_manifest(book_id, title or chosen_path.stem, str(chosen_path), source="local", status="pending")
         return manifest
 
     @app.post("/api/books/{book_id}/index")
@@ -91,6 +91,20 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="book not registered")
         manifest = service.index_book(book_id, book.title, Path(book.source_path))
         return manifest
+
+    @app.get("/api/books/{book_id}/status")
+    async def get_book_status(book_id: str):
+        try:
+            return service.get_book_status(book_id)
+        except FileNotFoundError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+
+    @app.post("/api/books/{book_id}/start-index")
+    async def start_book_index(book_id: str):
+        try:
+            return service.start_book_index(book_id)
+        except FileNotFoundError as e:
+            raise HTTPException(status_code=404, detail=str(e))
 
     @app.get("/api/books/{book_id}/reader")
     async def reader_view(book_id: str, chapter: int | None = None):
