@@ -4,6 +4,11 @@ let currentChapter = 1;
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
+const router = {
+  currentView: "library",  // "library" or "detail"
+  currentBookId: null,
+};
+
 const graphState = {
   canvas: null,
   ctx: null,
@@ -241,17 +246,24 @@ async function loadBooks() {
 
   bookCards.innerHTML = books.map((book) => {
     const isActive = String(book.id) === String(bookId);
-    const indexed = Boolean(book.indexed);
+    const status = book.status || "pending";
+    const actionBtn = status === "pending"
+      ? `<button class="start-index-btn secondary" data-book-id="${escapeHtml(book.id)}">开始分析</button>`
+      : status === "indexing"
+      ? `<span class="status-tag">分析中...</span>`
+      : status === "error"
+      ? `<span class="status-tag error">分析失败</span>`
+      : `<span class="status-tag ready">已就绪</span>`;
     const sourceTag = book.source === "upload"
       ? '<span class="source-tag upload">本地上传</span>'
       : '<span class="source-tag local">原书</span>';
     return `
       <div class="book-card ${isActive ? "active" : ""}">
         <div class="book-card-actions">
+          ${actionBtn}
           <button class="delete-book-btn" data-book-id="${escapeHtml(book.id)}" data-book-title="${escapeHtml(book.title)}">删除</button>
         </div>
         <div class="status-row">
-          <span class="status-tag ${indexed ? "" : "pending"}">${indexed ? "已索引" : "待处理"}</span>
           ${sourceTag}
           ${isActive ? "<span class='mini-tag'>当前工作本</span>" : ""}
         </div>
@@ -964,6 +976,15 @@ function bindEvents() {
     }
   });
 
+  // 开始分析按钮
+  document.addEventListener("click", (e) => {
+    if (e.target.classList.contains("start-index-btn")) {
+      const btn = e.target;
+      const bookId = btn.dataset.bookId;
+      startBookIndex(bookId);
+    }
+  });
+
   // 刷新书库按钮
   $("#refresh-books-btn")?.addEventListener("click", async () => {
     const btn = $("#refresh-books-btn");
@@ -1004,7 +1025,57 @@ function bindEvents() {
   });
 }
 
+async function startBookIndex(bookId) {
+  const btn = document.querySelector(`.start-index-btn[data-book-id="${bookId}"]`);
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "启动中...";
+  }
+  try {
+    const result = await fetchJson(`/api/books/${bookId}/start-index`, { method: "POST" });
+    if (result.status === "indexing") {
+      navigateTo(`#/book/${bookId}`);
+    }
+  } catch (error) {
+    handleActionError(error, "#book-cards", "启动失败");
+  }
+}
+
+function initRouter() {
+  window.addEventListener("hashchange", handleRouteChange);
+  handleRouteChange();
+}
+
+function handleRouteChange() {
+  const hash = window.location.hash || "#/";
+  if (hash.startsWith("#/book/")) {
+    const bookId = hash.replace("#/book/", "");
+    router.currentView = "detail";
+    router.currentBookId = bookId;
+    showBookDetail(bookId);
+  } else {
+    router.currentView = "library";
+    router.currentBookId = null;
+    showLibraryView();
+  }
+}
+
+function navigateTo(path) {
+  window.location.hash = path;
+}
+
+function showLibraryView() {
+  // 显示藏书列表视图
+  // 隐藏详情视图
+}
+
+function showBookDetail(bookId) {
+  // 显示详情视图
+  // 隐藏藏书列表视图
+}
+
 async function bootstrap() {
+  initRouter();
   setTabs();
   setupGraphCanvas();
   bindEvents();
