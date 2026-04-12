@@ -359,7 +359,7 @@ function showDeleteConfirmDialog(bookId, bookTitle) {
 }
 
 async function loadReader(chapter = 1) {
-  const payload = await fetchJson(`/api/books/${bookId}/reader?chapter=${chapter}`);
+  const payload = await fetchJson(`/api/books/${encodeURIComponent(bookId)}/reader?chapter=${chapter}`);
   const chapters = payload.chapters || [];
   const current = payload.current_chapter || {};
   const summary = chapters.find((item) => item.chapter === current.chapter)?.summary || "暂无摘要。";
@@ -452,7 +452,7 @@ async function askQuestion() {
   setWorkspaceStatus("正在生成证据回答", "busy");
 
   try {
-    const result = await fetchJson(`/api/books/${bookId}/ask`, {
+    const result = await fetchJson(`/api/books/${encodeURIComponent(bookId)}/ask`, {
       method: "POST",
       body: JSON.stringify(payload),
     });
@@ -512,7 +512,7 @@ async function continueStory() {
   setWorkspaceStatus("正在生成续写", "busy");
 
   try {
-    const result = await fetchJson(`/api/books/${bookId}/continue`, {
+    const result = await fetchJson(`/api/books/${encodeURIComponent(bookId)}/continue`, {
       method: "POST",
       body: JSON.stringify(payload),
     });
@@ -572,7 +572,7 @@ async function rebuildIndex() {
   setWorkspaceStatus("正在重建索引", "busy");
 
   try {
-    await fetchJson(`/api/books/${bookId}/index`, { method: "POST" });
+    await fetchJson(`/api/books/${encodeURIComponent(bookId)}/index`, { method: "POST" });
     await loadBooks();
     await loadReader(currentChapter);
     await loadDashboard();
@@ -641,7 +641,7 @@ async function loadGraph() {
     query.set("center", center);
   }
 
-  const payload = await fetchJson(`/api/books/${bookId}/graph?${query.toString()}`);
+  const payload = await fetchJson(`/api/books/${encodeURIComponent(bookId)}/graph?${query.toString()}`);
   populateGraphCharacterOptions(payload.available_characters || [], payload.center || center);
   renderGraph(payload);
 }
@@ -1068,7 +1068,7 @@ async function startBookIndex(bookId) {
     btn.textContent = "启动中...";
   }
   try {
-    const result = await fetchJson(`/api/books/${bookId}/start-index`, { method: "POST" });
+    const result = await fetchJson(`/api/books/${encodeURIComponent(bookId)}/start-index`, { method: "POST" });
     if (result.status === "indexing") {
       navigateTo(`#/book/${bookId}`);
     }
@@ -1167,7 +1167,7 @@ function startPollingStatus(bookId) {
   $("#detail-content").hidden = true;
 
   const poll = async () => {
-    const status = await fetchJson(`/api/books/${bookId}/status`);
+    const status = await fetchJson(`/api/books/${encodeURIComponent(bookId)}/status`);
     updateDetailStatus(status.status, status.progress);
     loadDetailArtifacts(bookId).catch((error) => console.error("Failed to load artifacts:", error));
 
@@ -1237,7 +1237,7 @@ async function loadDetailArtifact(bookId, artifactName) {
   }
   detailArtifactState.selectedName = artifactName;
   renderDetailArtifactCatalog();
-  const payload = await fetchJson(`/api/books/${bookId}/artifacts/${artifactName}`);
+  const payload = await fetchJson(`/api/books/${encodeURIComponent(bookId)}/artifacts/${artifactName}`);
   if (detailArtifactState.bookId !== bookId) {
     return;
   }
@@ -1250,7 +1250,7 @@ async function loadDetailArtifacts(bookId, preferredName = null) {
     detailArtifactState.selectedName = preferredName;
   }
 
-  const payload = await fetchJson(`/api/books/${bookId}/artifacts`);
+  const payload = await fetchJson(`/api/books/${encodeURIComponent(bookId)}/artifacts`);
   if (detailArtifactState.bookId !== bookId) {
     return;
   }
@@ -1277,66 +1277,231 @@ async function loadDetailArtifacts(bookId, preferredName = null) {
 }
 
 async function loadDetailGraph(bookId) {
-  // 获取章节范围
   const scopeStart = parseInt($("#detail-graph-scope-start")?.value) || 1;
   const scopeEnd = parseInt($("#detail-graph-scope-end")?.value) || 14;
+  const encodedId = encodeURIComponent(bookId);
 
   try {
-    const data = await fetchJson(`/api/books/${bookId}/graph?chapter_start=${scopeStart}&chapter_end=${scopeEnd}`);
-    renderDetailGraph(data);
-    renderCharacterCards(data.characters || []);
-    renderDetailTimeline(data.events || []);
+    const data = await fetchJson(`/api/books/${encodedId}/graph?chapter_start=${scopeStart}&chapter_end=${scopeEnd}`);
+    renderDetailForceGraph(data);
+    const events = (data.nodes || []).filter(n => n.type === "event").map(e => ({ chapter: e.chapter, description: e.summary || "" }));
+    renderCharacterCards(data.available_characters || [], data);
+    renderDetailTimeline(events);
   } catch (error) {
     console.error("Failed to load graph:", error);
   }
 }
 
-function renderDetailGraph(data) {
+const detailGraphState = {
+  canvas: null,
+  ctx: null,
+  nodes: [],
+  edges: [],
+  nodeMap: new Map(),
+  selectedId: null,
+  hoveredId: null,
+  draggedNode: null,
+  pointerOffset: { x: 0, y: 0 },
+  animationFrame: null,
+  dpr: window.devicePixelRatio || 1,
+};
+
+function renderDetailForceGraph(data) {
   const canvas = $("#detail-knowledge-graph-canvas");
   if (!canvas) return;
   const ctx = canvas.getContext("2d");
 
-  // 简化实现：清空画布并绘制节点
-  canvas.width = canvas.offsetWidth * window.devicePixelRatio;
-  canvas.height = canvas.offsetHeight * window.devicePixelRatio;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  detailGraphState.canvas = canvas;
+  detailGraphState.ctx = ctx;
 
-  if (!data.nodes) return;
+  const dpr = window.devicePixelRatio || 1;
+  detailGraphState.dpr = dpr;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+  canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-  // 绘制节点（简化版本）
-  const nodes = data.nodes;
-  const centerX = canvas.width / 2;
-  const centerY = canvas.height / 2;
-  const radius = Math.min(centerX, centerY) * 0.6;
+  const width = rect.width || 600;
+  const height = rect.height || 400;
 
-  nodes.forEach((node, i) => {
-    const angle = (i / nodes.length) * Math.PI * 2;
-    const x = centerX + radius * Math.cos(angle);
-    const y = centerY + radius * Math.sin(angle);
+  detailGraphState.nodes = (data.nodes || []).map((node, index) => ({
+    ...node,
+    radius: node.size,
+    x: width * 0.15 + (index % 5) * (width * 0.15) + Math.random() * 20,
+    y: height * 0.15 + Math.floor(index / 5) * (height * 0.15) + Math.random() * 20,
+    vx: 0,
+    vy: 0,
+  }));
 
-    ctx.beginPath();
-    ctx.arc(x, y, 20, 0, Math.PI * 2);
-    ctx.fillStyle = node.type === "character" ? "#74e1b8" : "#ff7e8b";
-    ctx.fill();
-    ctx.strokeStyle = "#fff";
-    ctx.stroke();
+  detailGraphState.nodeMap = new Map(detailGraphState.nodes.map((n) => [n.id, n]));
+  detailGraphState.edges = (data.edges || [])
+    .map((edge) => ({
+      ...edge,
+      sourceNode: detailGraphState.nodeMap.get(edge.source),
+      targetNode: detailGraphState.nodeMap.get(edge.target),
+    }))
+    .filter((edge) => edge.sourceNode && edge.targetNode);
 
-    ctx.fillStyle = "#fff";
-    ctx.font = "12px Noto Sans SC";
-    ctx.textAlign = "center";
-    ctx.fillText(node.name, x, y + 30);
+  detailGraphState.selectedId = data.center ? `char::${data.center}` : detailGraphState.nodes[0]?.id || null;
+
+  // Set up interaction events
+  canvas.onmousedown = (e) => {
+    const pos = detailGraphPointerPos(e);
+    const node = detailGraphFindNode(pos.x, pos.y);
+    if (node) {
+      detailGraphState.draggedNode = node;
+      detailGraphState.selectedId = node.id;
+      detailGraphState.pointerOffset = { x: pos.x - node.x, y: pos.y - node.y };
+    }
+  };
+  canvas.onmousemove = (e) => {
+    const pos = detailGraphPointerPos(e);
+    const hovered = detailGraphFindNode(pos.x, pos.y);
+    detailGraphState.hoveredId = hovered?.id || null;
+    canvas.style.cursor = hovered ? "pointer" : "default";
+    if (detailGraphState.draggedNode) {
+      detailGraphState.draggedNode.x = pos.x - detailGraphState.pointerOffset.x;
+      detailGraphState.draggedNode.y = pos.y - detailGraphState.pointerOffset.y;
+      detailGraphState.draggedNode.vx = 0;
+      detailGraphState.draggedNode.vy = 0;
+    }
+  };
+  canvas.onmouseup = () => { detailGraphState.draggedNode = null; };
+  canvas.onmouseleave = () => { detailGraphState.draggedNode = null; detailGraphState.hoveredId = null; };
+
+  detailGraphLoop();
+}
+
+function detailGraphPointerPos(e) {
+  const rect = detailGraphState.canvas.getBoundingClientRect();
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+}
+
+function detailGraphFindNode(x, y) {
+  for (let i = detailGraphState.nodes.length - 1; i >= 0; i--) {
+    const n = detailGraphState.nodes[i];
+    const dx = x - n.x, dy = y - n.y;
+    if (Math.sqrt(dx * dx + dy * dy) <= n.radius + 4) return n;
+  }
+  return null;
+}
+
+function detailGraphLoop() {
+  if (detailGraphState.animationFrame) cancelAnimationFrame(detailGraphState.animationFrame);
+  const frame = () => {
+    detailGraphStepSim();
+    detailGraphDraw();
+    detailGraphState.animationFrame = requestAnimationFrame(frame);
+  };
+  detailGraphState.animationFrame = requestAnimationFrame(frame);
+}
+
+function detailGraphStepSim() {
+  const canvas = detailGraphState.canvas;
+  const width = canvas?.clientWidth || 600;
+  const height = canvas?.clientHeight || 400;
+  const cx = width / 2, cy = height / 2;
+  const nodes = detailGraphState.nodes;
+
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      let dx = nodes[i].x - nodes[j].x, dy = nodes[i].y - nodes[j].y;
+      let dSq = dx * dx + dy * dy;
+      if (dSq < 1) { dSq = 1; dx = 1; dy = 0; }
+      const f = 2200 / dSq;
+      nodes[i].vx += (dx * f) / 80;
+      nodes[i].vy += (dy * f) / 80;
+      nodes[j].vx -= (dx * f) / 80;
+      nodes[j].vy -= (dy * f) / 80;
+    }
+  }
+
+  detailGraphState.edges.forEach((edge) => {
+    const s = edge.sourceNode, t = edge.targetNode;
+    const dx = t.x - s.x, dy = t.y - s.y;
+    const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+    const desired = edge.type === "character_relation" ? 132 : edge.type === "participates_in" ? 96 : 162;
+    const strength = 0.004 + Math.min(edge.weight, 8) * 0.0009;
+    const spring = (dist - desired) * strength;
+    const nx = dx / dist, ny = dy / dist;
+    s.vx += nx * spring; s.vy += ny * spring;
+    t.vx -= nx * spring; t.vy -= ny * spring;
+  });
+
+  nodes.forEach((node) => {
+    const attr = node.type === "character" ? 0.0015 : 0.001;
+    node.vx += (cx - node.x) * attr;
+    node.vy += (cy - node.y) * attr;
+    if (detailGraphState.draggedNode?.id === node.id) { node.vx = 0; node.vy = 0; return; }
+    node.vx *= 0.88; node.vy *= 0.88;
+    node.x += node.vx; node.y += node.vy;
+    node.x = Math.max(30, Math.min(width - 30, node.x));
+    node.y = Math.max(30, Math.min(height - 30, node.y));
   });
 }
 
-function renderCharacterCards(characters) {
+function detailGraphDraw() {
+  const ctx = detailGraphState.ctx;
+  const canvas = detailGraphState.canvas;
+  if (!ctx || !canvas) return;
+  const width = canvas.clientWidth, height = canvas.clientHeight;
+  ctx.clearRect(0, 0, width, height);
+
+  detailGraphState.edges.forEach((edge) => {
+    ctx.beginPath();
+    ctx.moveTo(edge.sourceNode.x, edge.sourceNode.y);
+    ctx.lineTo(edge.targetNode.x, edge.targetNode.y);
+    ctx.strokeStyle = edge.type === "timeline_next" ? "rgba(245,201,106,0.24)"
+      : edge.type === "participates_in" ? "rgba(255,126,139,0.26)" : "rgba(116,225,184,0.36)";
+    ctx.lineWidth = edge.type === "character_relation" ? 1.9 : 1.2;
+    ctx.stroke();
+  });
+
+  detailGraphState.nodes.forEach((node) => {
+    const isSel = detailGraphState.selectedId === node.id;
+    const isHov = detailGraphState.hoveredId === node.id;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.fillStyle = node.is_center ? "#ff7e8b" : node.type === "character" ? "#74e1b8" : "#f5c96a";
+    ctx.shadowBlur = isSel ? 18 : isHov ? 12 : 0;
+    ctx.shadowColor = isSel ? "rgba(255,126,139,0.42)" : "rgba(116,225,184,0.28)";
+    ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    ctx.beginPath();
+    ctx.lineWidth = isSel || isHov ? 3 : 1.5;
+    ctx.strokeStyle = isSel || isHov ? "#f7f5ef" : "rgba(255,255,255,0.65)";
+    ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.font = node.type === "event" ? '600 11px "Noto Sans SC",sans-serif' : '600 12px "Noto Sans SC",sans-serif';
+    ctx.fillStyle = "rgba(243,244,239,0.92)";
+    ctx.textAlign = "center";
+    ctx.fillText(truncateLabel(node.label), node.x, node.y + node.radius + 14);
+  });
+}
+
+function renderCharacterCards(characters, graphData) {
   const container = $("#detail-character-cards");
   if (!container) return;
-  container.innerHTML = characters.map(char => `
-    <div class="character-card">
-      <strong>${escapeHtml(char.name)}</strong>
-      <p>出现次数：${char.count || 0}</p>
-    </div>
-  `).join("");
+  // characters is available_characters (list of names), graphData has node details
+  const charNodes = (graphData?.nodes || []).filter(n => n.type === "character");
+  const nodeMap = new Map(charNodes.map(n => [n.label, n]));
+
+  container.innerHTML = characters.map(name => {
+    const node = nodeMap.get(name);
+    const summary = node?.summary || "";
+    const chapters = node?.chapters || [];
+    return `
+      <div class="character-card">
+        <strong>${escapeHtml(name)}</strong>
+        ${chapters.length ? `<div class="book-meta">章节：${chapters.slice(0, 6).map(c => `${c}`).join("、")}</div>` : ""}
+        ${summary ? `<p>${escapeHtml(summary)}</p>` : ""}
+      </div>
+    `;
+  }).join("");
 }
 
 function renderDetailTimeline(events) {

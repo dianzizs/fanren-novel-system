@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import unicodedata
 from pathlib import Path
 
@@ -23,15 +24,16 @@ def _fix_filename_encoding(filename: str) -> str:
 
 
 def _sanitize_book_id(name: str) -> str:
-    """生成安全且可读的书名 ID"""
-    # 如果包含汉字，直接用拼音首字母或原文做 ID
+    """生成安全且可读的书名 ID（不含括号等 URL 不安全字符）"""
     has_cjk = any("\u4e00" <= c <= "\u9fff" for c in name)
     if has_cjk:
-        # 提取中文和 ASCII 字符，保留可读性
-        cleaned = "".join(c if ("\u4e00" <= c <= "\u9fff" or c.isalnum() or c in "()-_") else "-" for c in name)
-        cleaned = cleaned.strip(" -")
+        # 保留中文、字母、数字、下划线和连字符，括号替换为连字符
+        cleaned = "".join(c if ("\u4e00" <= c <= "\u9fff" or c.isalnum() or c in "_-") else "-" for c in name)
+        cleaned = re.sub(r"-+", "-", cleaned).strip(" -")
         return cleaned[:60] if cleaned else name[:30]
-    return name
+    cleaned = "".join(c if c.isalnum() or c in "_-" else "-" for c in name)
+    cleaned = re.sub(r"-+", "-", cleaned).strip(" -")
+    return cleaned[:60] if cleaned else name[:30]
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles

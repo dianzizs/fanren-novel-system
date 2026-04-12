@@ -27,7 +27,7 @@ from .models import (
     Scope,
     TimelineEvent,
 )
-from .planner import MemoryState, RuleBasedPlanner
+from .planner import MemoryState, QueryRewriter, RuleBasedPlanner
 from .retrieval import HybridRetriever, RetrievalHit
 
 
@@ -172,6 +172,7 @@ class NovelSystemService:
         self.repo = BookIndexRepository(self.config)
         self.llm = MiniMaxClient(self.config)
         self.planner = RuleBasedPlanner()
+        self.query_rewriter = QueryRewriter()
         self.session_memory: dict[str, list[ConversationTurn]] = {}
         self.token_usage: dict[str, dict[str, int]] = defaultdict(lambda: {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0})
         self.bootstrap_default_book()
@@ -564,9 +565,15 @@ class NovelSystemService:
             planner.constraints = list(dict.fromkeys([*planner.constraints, "prompt_injection_isolation"]))
             planner.retrieval_targets = list(dict.fromkeys([*planner.retrieval_targets, "chapter_chunks"]))
 
-        hits = self._retrieve(
-            book_index,
+        # Query rewrite: use rewritten query for retrieval while keeping original info
+        rewritten = self.query_rewriter.rewrite(
             request.user_query,
+            request.scope,
+            request.conversation_history,
+        )
+        hits = self._retrieve_with_rewrite(
+            book_index,
+            rewritten,
             planner,
             request.scope,
             request.top_k,
@@ -582,7 +589,7 @@ class NovelSystemService:
                 constraints=planner.constraints,
                 success_criteria=planner.success_criteria,
             )
-            hits = self._retrieve(book_index, request.user_query, fallback_planner, request.scope, request.top_k, None)
+            hits = self._retrieve_with_rewrite(book_index, rewritten, fallback_planner, request.scope, request.top_k, None)
 
         heuristic = heuristic_answer(request.user_query, request.scope, memory)
         if planner.task_type == "continuation":
@@ -603,6 +610,7 @@ class NovelSystemService:
                 hits=hits,
                 memory=memory,
                 scope=request.scope,
+                rewrite_notes=rewritten.expansions,
             )
         evidence = self._to_evidence_items(hits)
         uncertainty = self._estimate_uncertainty(answer, hits)
@@ -629,9 +637,14 @@ class NovelSystemService:
                 success_criteria=["character_consistent", "no_spoiler_beyond_scope"],
             )
 
-        hits = self._retrieve(
-            book_index,
+        rewritten = self.query_rewriter.rewrite(
             request.user_query,
+            request.scope,
+            request.conversation_history,
+        )
+        hits = self._retrieve_with_rewrite(
+            book_index,
+            rewritten,
             planner,
             request.scope,
             request.top_k,
@@ -1038,6 +1051,45 @@ class NovelSystemService:
         )
         return hits
 
+    def _retrieve_with_rewrite(
+        self,
+        book_index: Any,
+        rewritten: Any,
+        planner: PlannerOutput,
+        scope: Scope,
+        top_k: int,
+        simulate: str | None,
+    ) -> list[RetrievalHit]:
+        """Use rewritten query for main retrieval, original query for supplementary recall"""
+        retriever = HybridRetriever(book_index)
+        rewritten_hits = retriever.retrieve(
+            query=rewritten.rewritten,
+            targets=planner.retrieval_targets,
+            chapter_scope=scope.chapters,
+            top_k=top_k,
+            simulate=simulate,
+        )
+        original_hits = retriever.retrieve(
+            query=rewritten.original,
+            targets=planner.retrieval_targets,
+            chapter_scope=scope.chapters,
+            top_k=max(3, top_k // 2),
+            simulate=simulate,
+        )
+        seen: set[tuple[str, str]] = set()
+        merged: list[RetrievalHit] = []
+        for hit in rewritten_hits:
+            key = (hit.target, hit.document["id"])
+            if key not in seen:
+                seen.add(key)
+                merged.append(hit)
+        for hit in original_hits:
+            key = (hit.target, hit.document["id"])
+            if key not in seen:
+                seen.add(key)
+                merged.append(hit)
+        return merged[:top_k]
+
     def _prepend_raw_retrieved_text(
         self,
         hits: list[RetrievalHit],
@@ -1067,6 +1119,7 @@ class NovelSystemService:
         hits: list[RetrievalHit],
         memory: MemoryState,
         scope: Scope,
+        rewrite_notes: list[str] | None = None,
     ) -> str:
         if planner.task_type == "summary":
             fallback = self._fallback_summary(hits)
@@ -1087,6 +1140,9 @@ class NovelSystemService:
         context = self._format_context(hits)
         preference = self._render_memory(memory)
         scope_note = self._render_scope(scope)
+        rewrite_note = ''
+        if rewrite_notes:
+            rewrite_note = '\\n查询重写信息：' + ';'.join(rewrite_notes)
         messages = [
             {
                 "role": "system",
