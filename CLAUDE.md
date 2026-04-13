@@ -57,3 +57,17 @@ curl -X POST "http://localhost:8000/api/books/{book_id}/ask" \
 环境变量控制：
 - `TRACE_ENABLED=true` - 启用追踪日志
 - `TRACE_LOG_LEVEL=INFO` - 日志级别
+
+## Claude Code / Superpowers Routing
+
+本仓库优先复用已安装的全局 superpowers skills，不额外假设项目级 skills 已存在。
+
+- 调试、trace、检索异常、测试失败、validator / planner / retrieval 行为不符预期：先考虑 `systematic-debugging`
+- 新增功能、修改行为、重构：先考虑 `brainstorming`；进入代码实现后考虑 `test-driven-development`
+- 用户明确要计划、分步骤方案、roadmap：优先 `writing-plans`
+- 用户贴 review / reviewer / code review 反馈：优先 `receiving-code-review`
+- 用户要求做一次代码审查：优先 `requesting-code-review`
+- 准备声称“修好了 / 可以提交 / 可以合并 / tests pass”：优先 `verification-before-completion`
+- 准备收尾分支、整理合并流程：优先 `finishing-a-development-branch`
+
+维护 Claude 路由配置时，使用 `tests/test_claude_skill_router.py` 作为回归验证，避免只改提示词不验行为。
