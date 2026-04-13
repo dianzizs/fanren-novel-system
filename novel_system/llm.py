@@ -101,12 +101,21 @@ class MiniMaxClient:
                         "Authorization": f"Bearer {self.api_key}",
                         "Content-Type": "application/json",
                     },
-                    json={"model": model, "input": texts},
+                    # MiniMax API 使用 "texts" 字段，需要 "type" 参数
+                    # type: "query" 用于查询，"document" 用于文档
+                    json={"model": model, "texts": texts, "type": "query"},
                     timeout=30,
                 )
                 response.raise_for_status()
-                data = response.json()["data"]
-                return [item["embedding"] for item in data]
+                resp_json = response.json()
+                # MiniMax API 返回 "vectors" 字段，不是 "data"
+                vectors = resp_json.get("vectors")
+                if vectors is None:
+                    # 检查是否有错误
+                    base_resp = resp_json.get("base_resp", {})
+                    error_msg = base_resp.get("status_msg", "Unknown error")
+                    raise RuntimeError(f"MiniMax embedding API error: {error_msg}")
+                return vectors
 
             except requests.exceptions.Timeout:
                 last_error = "API timeout"

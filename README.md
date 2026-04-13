@@ -254,6 +254,30 @@ RetrievalTarget = Literal[
 
 ## 更新日志
 
+### 2026-04-14 - 实体一致性检查 & Embedding API 修复
+
+**新功能：**
+- **实体抽取模块 (EntityExtractor)**: 从文本中抽取实体属性（性格、外貌、体型、颜色、修为等级）
+  - 支持预编译正则模式，优化性能
+  - 词库 + 正则上下文约束的双重匹配
+  - 支持否定词检测，避免误匹配
+  - 支持性格对立词检测（如"谨慎"与"莽撞"）
+  - 支持修为等级跳跃检测
+- **实体一致性检查**: 验证答案/续写与证据之间的实体属性是否一致
+  - 集成到 AnswerValidator 和 ContinuationValidator
+  - 自动检测人物性格、外貌、修为等级矛盾
+
+**修复：**
+- 修复 MiniMax embedding API 调用格式：
+  - 使用 `texts` 字段替代 `input`
+  - 添加必需的 `type` 参数（`query`/`document`）
+  - 正确处理 `vectors` 响应字段
+
+**改进：**
+- validator.py 扩展 271 行，增强验证能力
+- 新增 entity_extractor.py 模块
+- 新增 test_entity_extractor.py 测试
+
 ### 2026-04-13 - 验证层与追踪系统
 
 **新功能：**
