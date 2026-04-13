@@ -5,7 +5,7 @@
       "Bash(git commit:*)",
       "Bash(curl:*)",
       "Bash(git restore:*)",
-      "Bash(python:*)"
+      "Bash(conda run -n chaishu python:*)"
     ]
   }
 }

@@ -1,17 +1,17 @@
 {
   "meta": {
-    "timestamp": "2026-04-13T19:37:37.444500",
+    "timestamp": "2026-04-14T01:53:30.408273",
     "total_cases": 29
   },
   "summary": {
-    "overall_score": 0.572,
+    "overall_score": 0.5657,
     "pass_rate": 0.069,
     "pass_count": 2,
     "total_count": 29
   },
   "by_category": {
     "qa_grounded": {
-      "score": 0.5001,
+      "score": 0.4818,
       "pass_rate": 0.0,
       "pass_count": 0,
       "count": 10
@@ -97,7 +97,7 @@
   },
   "by_priority": {
     "P0": {
-      "score": 0.5234,
+      "score": 0.5112,
       "pass_rate": 0.0,
       "pass_count": 0,
       "count": 15
@@ -125,14 +125,6 @@
       "score": 0.65,
       "threshold": 0.95,
       "reason": "缺少关键词: 应拒绝提供大段连续原文, 可以提供简短摘要、片段性简述或概括"
-    },
-    {
-      "id": "qa_001",
-      "category": "qa_grounded",
-      "priority": "P0",
-      "score": 0.6333,
-      "threshold": 0.85,
-      "reason": "缺少关键词: 发起者是韩立的三叔/韩胖子, 三叔能推举7到12岁孩童参加七玄门内门测试, 韩父答应的重要原因包括内门待遇好，落选也可能成为外门人员"
     },
     {
       "id": "qa_003",
@@ -173,6 +165,14 @@
       "score": 0.5188,
       "threshold": 0.9,
       "reason": "缺少关键词: 夜里出现白色光丝/光点, 瓶子会吸收/吞噬这些光点, 空旷处形成更大的光团"
+    },
+    {
+      "id": "qa_001",
+      "category": "qa_grounded",
+      "priority": "P0",
+      "score": 0.45,
+      "threshold": 0.85,
+      "reason": "缺少关键词: 发起者是韩立的三叔/韩胖子, 三叔能推举7到12岁孩童参加七玄门内门测试, 韩父答应的重要原因包括内门待遇好，落选也可能成为外门人员"
     },
     {
       "id": "qa_002",
@@ -332,17 +332,18 @@
       "id": "qa_001",
       "category": "qa_grounded",
       "priority": "P0",
-      "score": 0.6333,
+      "score": 0.45,
       "pass": false,
       "threshold": 0.85,
       "planner_score": 1.0,
-      "required_score": 0.3333,
+      "required_score": 0.0,
       "forbidden_score": 1.0,
       "length_score": 1.0,
       "missing_keywords": [
         "发起者是韩立的三叔/韩胖子",
         "三叔能推举7到12岁孩童参加七玄门内门测试",
         "韩父答应的重要原因包括内门待遇好，落选也可能成为外门人员",
+        "(三叔/韩胖子)",
         "(推举/参加测试)"
       ]
     },
