@@ -62,6 +62,19 @@ from .validator import (
 )
 
 
+def _compute_deprecated_uncertainty(confidence: str) -> str:
+    """向后兼容：将 confidence 转换为旧 uncertainty 格式。
+
+    Args:
+        confidence: 置信度 ("low", "medium", "high")
+
+    Returns:
+        不确定性 (confidence 的反向)
+    """
+    mapping = {"high": "low", "medium": "medium", "low": "high"}
+    return mapping.get(confidence, "medium")
+
+
 FUTURE_QUERY_RE = re.compile(r"(以后|后面|最终|最后|结局|真相|到底有什么用)")
 GRAPH_TITLE_SUFFIXES = (
     "大夫",
@@ -597,6 +610,7 @@ class NovelSystemService:
                 planner=planner,
                 answer=self._copyright_refusal(request.user_query),
                 evidence=[],
+                confidence="high",
                 uncertainty="low",
                 scope=request.scope,
                 memory=memory.to_dict(),
@@ -614,6 +628,7 @@ class NovelSystemService:
                 planner=planner,
                 answer=answer,
                 evidence=evidence,
+                confidence="high",
                 uncertainty="low",
                 scope=request.scope,
                 memory=memory.to_dict(),
@@ -625,6 +640,7 @@ class NovelSystemService:
                 planner=planner,
                 answer=answer,
                 evidence=[],
+                confidence="low",
                 uncertainty="high",
                 scope=request.scope,
                 memory=memory.to_dict(),
@@ -686,6 +702,7 @@ class NovelSystemService:
                 planner=planner,
                 answer=refusal_answer,
                 evidence=[],
+                confidence="low",
                 uncertainty="high",
                 scope=request.scope,
                 memory=memory.to_dict(),
@@ -715,7 +732,6 @@ class NovelSystemService:
             )
         evidence = self._to_evidence_items(hits)
         evidence_spans = self._to_evidence_spans(hits)
-        uncertainty = self._estimate_uncertainty(answer, hits)
 
         # === 验证层: Answer Validator ===
         validation_result = self.answer_validator.validate(
@@ -724,11 +740,8 @@ class NovelSystemService:
             evidence=evidence,
             gate_result=gate_result,
         )
-        # 根据验证结果调整置信度
-        if validation_result.confidence == "high":
-            uncertainty = "high"
-        elif validation_result.confidence == "medium" and uncertainty == "low":
-            uncertainty = "medium"
+        # 使用 validation_result 的置信度
+        confidence = validation_result.confidence
 
         # === 验证层: Spoiler Guard (自动检测) ===
         total_chapters = int(book_index.manifest.get("chapter_count", 0))
@@ -742,8 +755,15 @@ class NovelSystemService:
         # 如果检测到剧透，处理答案
         if spoiler_risk.level in ["medium", "high"]:
             answer = self.spoiler_guard.redact_content(answer, spoiler_risk)
+            # SpoilerGuard 检测后调整置信度
             if spoiler_risk.level == "high":
-                uncertainty = "high"
+                confidence = "low"
+            elif spoiler_risk.level == "medium":
+                # 降低一级
+                if confidence == "high":
+                    confidence = "medium"
+                elif confidence == "medium":
+                    confidence = "low"
 
         # === TRACING: 构建追踪数据 ===
         total_duration = (time.perf_counter() - start_time) * 1000
@@ -773,7 +793,7 @@ class NovelSystemService:
             retrieval=retrieval_trace,
             evidence_count=len(evidence),
             evidence_spans=evidence_spans,
-            uncertainty=uncertainty,
+            confidence=confidence,
             total_duration_ms=round(total_duration, 2),
             memory_state=memory.to_dict(),
         )
@@ -786,7 +806,8 @@ class NovelSystemService:
             planner=planner,
             answer=answer,
             evidence=evidence,
-            uncertainty=uncertainty,
+            confidence=confidence,
+            uncertainty=_compute_deprecated_uncertainty(confidence),
             scope=request.scope,
             memory=memory.to_dict(),
             warnings=warnings,
