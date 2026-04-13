@@ -1,9 +1,20 @@
 from __future__ import annotations
 
 from datetime import datetime
+from enum import Enum, auto
 from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
+
+
+class QueryIntent(Enum):
+    """查询意图类型。"""
+    CAUSAL_CHAIN = auto()       # 因果链：为什么、怎么、原因、结果
+    FACT_QUERY = auto()         # 事实查询：是什么、有哪些
+    CHARACTER_ANALYSIS = auto() # 人物分析：性格、外貌、是谁
+    SUMMARY = auto()            # 总结：概括、摘要
+    TEMPORAL = auto()           # 时间相关：什么时候、后来
+    GENERAL = auto()            # 通用查询
 
 
 TaskType = Literal[
