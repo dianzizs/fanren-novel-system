@@ -27,7 +27,6 @@ class MemoryState:
 SHORT_PREFERENCE_RE = re.compile(r"(简短|短一点|精简|别太长)")
 EVIDENCE_PREFERENCE_RE = re.compile(r"(带证据|给证据|附证据|附引用|带引用)")
 NO_SPOILER_RE = re.compile(r"(不剧透|不要剧透|只看前\d+章|只基于前\d+章)")
-FUTURE_RE = re.compile(r"(以后|后面|最终|最后|到底有什么用|秘密被完全揭开)")
 
 
 # ── 查询重写 ──────────────────────────────────────────────
@@ -274,31 +273,32 @@ class RuleBasedPlanner:
             )
             return planner, memory
 
-        if FUTURE_RE.search(query):
-            planner = PlannerOutput(
-                task_type="qa",
-                retrieval_needed=True,
-                retrieval_targets=["recent_plot", "canon_memory", "chapter_chunks"],
-                retrieval_intent="causal_chain",
-                constraints=["grounded_answer", "cite_evidence", "no_spoiler_beyond_scope"],
-                success_criteria=["answer_correct", "scope_guard"],
-            )
-            return planner, memory
+        # === 意图优先路由（核心逻辑）===
 
-        retrieval_targets = ["chapter_chunks"]
-        retrieval_intent = "scene_evidence"
-        if any(keyword in query for keyword in ("为什么", "结果", "怎么", "原因")):
-            retrieval_targets = ["event_timeline", "chapter_chunks"]
-            retrieval_intent = "causal_chain"
-        if any(keyword in query for keyword in ("人物", "谁", "关系", "韩立", "张铁", "墨大夫", "舞岩", "韩胖子", "三叔")):
-            retrieval_targets = ["character_card", *retrieval_targets]
-            retrieval_intent = "alias_resolution"
+        # 1. 检测意图（优先级最高）
+        intent = self._detect_intent(query)
+
+        # 2. 根据意图确定基础检索目标
+        retrieval_targets = list(self.INTENT_TARGETS.get(intent, ["chapter_chunks"]))
+        retrieval_intent = self._get_retrieval_intent(intent)
+
+        # 3. 人名关键词作为辅助增强（不覆盖意图决策）
+        person_keywords = ("韩立", "张铁", "墨大夫", "舞岩", "韩胖子", "三叔")
+        if any(kw in query for kw in person_keywords) and intent != QueryIntent.CHARACTER_ANALYSIS:
+            # 因果/事实问题：补充 character_card 用于上下文，但不优先
+            if "character_card" not in retrieval_targets:
+                retrieval_targets.append("character_card")
+
+        # 4. 其他辅助逻辑
         if any(keyword in query for keyword in ("瓶子", "后来", "现在")):
-            retrieval_targets = ["recent_plot", *retrieval_targets]
+            if "recent_plot" not in retrieval_targets:
+                retrieval_targets.append("recent_plot")
+
         if multimodal:
             retrieval_targets = ["vision_parse", *retrieval_targets]
+
         planner = PlannerOutput(
-            task_type="qa",
+            task_type=self._get_task_type(intent, query),
             retrieval_needed=True,
             retrieval_targets=list(dict.fromkeys(retrieval_targets)),
             retrieval_intent=retrieval_intent,
