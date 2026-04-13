@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from .models import ConversationTurn, PlannerOutput, Scope
+from .models import ConversationTurn, PlannerOutput, QueryIntent, Scope
 
 
 @dataclass
@@ -136,6 +136,57 @@ class QueryRewriter:
 
 
 class RuleBasedPlanner:
+    """基于规则的查询规划器。"""
+
+    # 意图关键词模式（按优先级排序：更具体的意图先检查）
+    INTENT_PATTERNS: dict[QueryIntent, list[str]] = {
+        QueryIntent.SUMMARY: ["总结", "概括", "摘要", "简介"],
+        QueryIntent.TEMPORAL: ["什么时候", "后来", "之后", "之前", "最终", "结局"],
+        QueryIntent.CHARACTER_ANALYSIS: ["是谁", "性格", "外貌", "什么样的人", "人物卡"],
+        QueryIntent.CAUSAL_CHAIN: ["为什么", "怎么", "原因", "结果", "怎么会", "怎么会这样"],
+        QueryIntent.FACT_QUERY: ["是什么", "有哪些", "有没有", "是怎样的"],
+    }
+
+    # 意图到检索目标的映射
+    INTENT_TARGETS: dict[QueryIntent, list[str]] = {
+        QueryIntent.CAUSAL_CHAIN: ["event_timeline", "chapter_chunks"],
+        QueryIntent.FACT_QUERY: ["chapter_chunks", "canon_memory"],
+        QueryIntent.CHARACTER_ANALYSIS: ["character_card", "chapter_chunks"],
+        QueryIntent.SUMMARY: ["chapter_summaries", "event_timeline"],
+        QueryIntent.TEMPORAL: ["event_timeline", "recent_plot"],
+        QueryIntent.GENERAL: ["chapter_chunks"],
+    }
+
+    def _detect_intent(self, query: str) -> QueryIntent:
+        """检测查询意图（优先级最高）。
+
+        Args:
+            query: 用户查询
+
+        Returns:
+            检测到的意图类型
+        """
+        for intent, keywords in self.INTENT_PATTERNS.items():
+            if any(kw in query for kw in keywords):
+                return intent
+        return QueryIntent.GENERAL
+
+    def _get_retrieval_intent(self, intent: QueryIntent) -> str:
+        """根据意图返回检索意图。"""
+        mapping = {
+            QueryIntent.CAUSAL_CHAIN: "causal_chain",
+            QueryIntent.CHARACTER_ANALYSIS: "alias_resolution",
+        }
+        return mapping.get(intent, "scene_evidence")
+
+    def _get_task_type(self, intent: QueryIntent, query: str) -> str:
+        """根据意图返回任务类型。"""
+        if intent == QueryIntent.SUMMARY:
+            return "summary"
+        if intent == QueryIntent.CHARACTER_ANALYSIS:
+            return "analysis"
+        return "qa"
+
     def infer_memory(self, history: list[ConversationTurn], scope: Scope) -> MemoryState:
         state = MemoryState()
         for turn in history:
