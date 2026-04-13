@@ -42,6 +42,7 @@ class PlannerOutput(BaseModel):
     task_type: TaskType
     retrieval_needed: bool = True
     retrieval_targets: list[str] = Field(default_factory=list)
+    retrieval_intent: str = "scene_evidence"
     constraints: list[str] = Field(default_factory=list)
     success_criteria: list[str] = Field(default_factory=list)
 

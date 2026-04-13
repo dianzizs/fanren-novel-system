@@ -254,6 +254,31 @@ RetrievalTarget = Literal[
 
 ## 更新日志
 
+### 2026-04-14 - 场景感知检索重构
+
+**新模块：**
+- **Artifact Pipeline (`novel_system/artifacts/`)**: 稳定的中间产物构建器
+  - `SceneSegmentBuilder`: 基于地点转换进行场景分割，保留角色和事件元数据
+  - `CharacterRegistryBuilder`: 角色注册表，支持别名合并、活跃章节范围追踪
+  - `targets.py`: 从场景和角色注册表构建 `chapter_chunks`、`event_timeline`、`character_card`
+- **Search Package (`novel_system/search/`)**: 多目标检索编排
+  - `SearchOrchestrator`: 搜索编排器，支持精确别名匹配和稀疏文本匹配
+  - `profiles.py`: 目标配置（文本字段、ID字段、别名字段）
+  - `base.py`: 基础类型定义
+- **Index Pipeline (`novel_system/index_pipeline.py`)**: 公共索引管道入口
+
+**核心改进：**
+- **检索意图驱动**: `PlannerOutput` 新增 `retrieval_intent` 字段
+  - `alias_resolution`: 角色查询优先精确别名匹配
+  - `causal_chain`: 因果链查询优先事件时间线
+  - `scene_evidence`: 默认场景证据检索
+- **角色别名解析**: 支持"二愣子"→"韩立"等别名自动合并
+- **章节范围过滤**: 检索结果自动按章节范围过滤，支持角色卡 `active_range`
+
+**测试：**
+- 新增 17 个测试用例，覆盖场景分割、角色注册表、目标构建器、搜索编排器
+- 总计 89 个测试通过
+
 ### 2026-04-14 - 实体一致性检查 & Embedding API 修复
 
 **新功能：**

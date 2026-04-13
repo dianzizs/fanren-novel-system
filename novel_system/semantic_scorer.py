@@ -1,7 +1,7 @@
 """
 语义相似度计算模块
 
-使用 MiniMax API 计算文本嵌入向量，
+使用 EmbeddingProvider 计算文本嵌入向量，
 支持预计算和在线计算两种模式。
 """
 
@@ -9,16 +9,18 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
 from pydantic import BaseModel
 
+from .embedding.base import ModelInfo
 from .models import APIWarning
 
 if TYPE_CHECKING:
-    from .llm import MiniMaxClient
+    from .embedding.base import EmbeddingProvider
 
 logger = logging.getLogger(__name__)
 
@@ -26,15 +28,37 @@ logger = logging.getLogger(__name__)
 class EmbeddingCache(BaseModel):
     """嵌入向量缓存"""
     chunks: dict[str, list[float]] = {}  # chunk_id -> embedding
+    # 元数据
+    provider: str = ""
+    device: str = ""
     model_name: str = ""
-    dimension: int = 1536  # MiniMax embedding 维度
+    model_revision: str = ""
+    dimension: int = 512
+    normalized: bool = True
+    created_at: str = ""
+
+    def is_compatible(self, model_info: ModelInfo) -> bool:
+        """
+        检查缓存是否与当前模型兼容
+
+        Args:
+            model_info: 当前模型信息
+
+        Returns:
+            True 如果兼容
+        """
+        return (
+            self.provider == model_info.provider
+            and self.model_name == model_info.model_name
+            and self.dimension == model_info.dimension
+        )
 
 
 class SemanticScorer:
     """
     语义相似度评分器
 
-    使用 MiniMax API 计算语义相似度，
+    使用 EmbeddingProvider 计算语义相似度，
     结合 BM25 分数进行混合检索。
 
     支持两种模式：
@@ -50,17 +74,17 @@ class SemanticScorer:
 
     def __init__(
         self,
-        llm_client: "MiniMaxClient",
+        embedding_provider: "EmbeddingProvider",
         cache_path: Optional[Path] = None,
     ):
         """
         初始化评分器
 
         Args:
-            llm_client: MiniMax API 客户端
+            embedding_provider: Embedding Provider 实例
             cache_path: 预计算缓存文件路径
         """
-        self.llm_client = llm_client
+        self.embedding_provider = embedding_provider
         self.cache_path = cache_path
         self._cache: Optional[EmbeddingCache] = None
 
@@ -76,7 +100,19 @@ class SemanticScorer:
             with open(self.cache_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             self._cache = EmbeddingCache(**data)
-            logger.info(f"Loaded embedding cache: {len(self._cache.chunks)} chunks")
+
+            # 检查缓存兼容性
+            model_info = self.embedding_provider.get_model_info()
+            if not self._cache.is_compatible(model_info):
+                logger.warning(
+                    f"Embedding cache incompatible. "
+                    f"Cache: provider={self._cache.provider}, model={self._cache.model_name}, dim={self._cache.dimension}. "
+                    f"Current: provider={model_info.provider}, model={model_info.model_name}, dim={model_info.dimension}. "
+                    f"Cache will be rebuilt."
+                )
+                self._cache = None
+            else:
+                logger.info(f"Loaded embedding cache: {len(self._cache.chunks)} chunks")
         except Exception as e:
             logger.warning(f"Failed to load embedding cache: {e}")
             self._cache = None
@@ -101,13 +137,11 @@ class SemanticScorer:
         Returns:
             嵌入向量列表
         """
-        return self.llm_client.embed([text])[0]
+        return self.embedding_provider.embed([text])[0]
 
     def compute_embeddings_batch(self, texts: list[str]) -> list[list[float]]:
         """
         批量计算嵌入向量
-
-        MiniMax API 每批最多支持 50 条
 
         Args:
             texts: 文本列表
@@ -115,11 +149,7 @@ class SemanticScorer:
         Returns:
             嵌入向量列表
         """
-        results = []
-        for i in range(0, len(texts), 50):
-            batch = texts[i:i+50]
-            results.extend(self.llm_client.embed(batch))
-        return results
+        return self.embedding_provider.embed(texts)
 
     def get_cached_embedding(self, chunk_id: str) -> Optional[list[float]]:
         """获取预计算的向量"""
@@ -228,7 +258,7 @@ class SemanticScorer:
 def build_embedding_cache(
     chunks: list[dict[str, Any]],
     output_path: Path,
-    llm_client: "MiniMaxClient",
+    embedding_provider: "EmbeddingProvider",
     text_field: str = "content",
     id_field: str = "id",
 ) -> None:
@@ -240,7 +270,7 @@ def build_embedding_cache(
     Args:
         chunks: chunk 列表，每个包含 id 和 text
         output_path: 输出文件路径
-        llm_client: MiniMax API 客户端
+        embedding_provider: Embedding Provider 实例
         text_field: 文本字段名
         id_field: ID字段名
     """
@@ -249,22 +279,26 @@ def build_embedding_cache(
 
     # 批量计算
     logger.info(f"Computing embeddings for {len(texts)} chunks...")
-    embeddings = []
-    for i in range(0, len(texts), 50):
-        batch = texts[i:i+50]
-        embeddings.extend(llm_client.embed(batch))
-        logger.info(f"Processed {min(i+50, len(texts))}/{len(texts)} chunks")
+    embeddings = embedding_provider.embed(texts)
+    logger.info(f"Processed {len(texts)} chunks")
+
+    # 获取模型信息
+    model_info = embedding_provider.get_model_info()
 
     # 构建缓存
     cache = EmbeddingCache(
         chunks={id_: emb for id_, emb in zip(ids, embeddings)},
-        model_name=llm_client.embedding_model,
-        dimension=len(embeddings[0]) if embeddings else 1536,
+        provider=model_info.provider,
+        device=model_info.device,
+        model_name=model_info.model_name,
+        dimension=model_info.dimension,
+        normalized=model_info.normalized,
+        created_at=datetime.now().isoformat(),
     )
 
     # 保存
     with open(output_path, 'w', encoding='utf-8') as f:
-        json.dump(cache.model_dump(), f, ensure_ascii=False)
+        json.dump(cache.model_dump(), f, ensure_ascii=False, indent=2)
 
     logger.info(f"Saved embedding cache to {output_path}")
 
@@ -274,20 +308,20 @@ _scorer: Optional[SemanticScorer] = None
 
 
 def get_scorer(
-    llm_client: Optional["MiniMaxClient"] = None,
+    embedding_provider: Optional["EmbeddingProvider"] = None,
     cache_path: Optional[Path] = None,
 ) -> Optional[SemanticScorer]:
     """
     获取全局评分器实例
 
     Args:
-        llm_client: MiniMax API 客户端（首次调用时需要）
+        embedding_provider: Embedding Provider 实例（首次调用时需要）
         cache_path: 缓存文件路径
 
     Returns:
-        SemanticScorer 实例或 None（如果 llm_client 未提供）
+        SemanticScorer 实例或 None（如果 embedding_provider 未提供）
     """
     global _scorer
-    if _scorer is None and llm_client is not None:
-        _scorer = SemanticScorer(llm_client=llm_client, cache_path=cache_path)
+    if _scorer is None and embedding_provider is not None:
+        _scorer = SemanticScorer(embedding_provider=embedding_provider, cache_path=cache_path)
     return _scorer

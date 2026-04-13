@@ -1,23 +1,35 @@
+"""Retrieval compatibility layer.
+
+This module provides backward-compatible retrieval by delegating to
+the new SearchOrchestrator while preserving the original HybridRetriever
+interface for legacy code.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
 
-import numpy as np
-
-from .indexing import LoadedBookIndex, scope_filter
+from .search.orchestrator import SearchOrchestrator
 
 
 @dataclass
 class RetrievalHit:
+    """A retrieval hit with target, document, and score."""
     target: str
     document: dict[str, Any]
     score: float
 
 
 class HybridRetriever:
-    def __init__(self, book_index: LoadedBookIndex) -> None:
+    """Hybrid retriever that delegates to SearchOrchestrator.
+
+    This class maintains backward compatibility with the existing API
+    while using the new search orchestration internally.
+    """
+
+    def __init__(self, book_index: Any) -> None:
         self.book_index = book_index
+        self.orchestrator = SearchOrchestrator()
 
     def retrieve(
         self,
@@ -27,61 +39,27 @@ class HybridRetriever:
         top_k: int = 6,
         simulate: str | None = None,
     ) -> list[RetrievalHit]:
-        hits: list[RetrievalHit] = []
-        for target in targets:
-            if simulate == "character_card_index_miss" and target == "character_card":
-                continue
-            target_hits = self._search_target(query, target, chapter_scope, top_k=max(3, top_k))
-            hits.extend(target_hits)
-        hits.sort(key=lambda item: item.score, reverse=True)
-        deduped: list[RetrievalHit] = []
-        seen: set[tuple[str, str]] = set()
-        for hit in hits:
-            key = (hit.target, hit.document["id"])
-            if key in seen:
-                continue
-            seen.add(key)
-            deduped.append(hit)
-            if len(deduped) >= top_k:
-                break
-        return deduped
+        """Retrieve documents using the search orchestrator.
 
-    def _search_target(
-        self,
-        query: str,
-        target: str,
-        chapter_scope: list[int],
-        top_k: int,
-    ) -> list[RetrievalHit]:
-        documents = self.book_index.corpora.get(target, [])
-        vectorizer = self.book_index.vectorizers.get(target)
-        matrix = self.book_index.matrices.get(target)
-        if not documents or vectorizer is None or matrix is None:
-            return []
-        query_vec = vectorizer.transform([query])
-        scores = (matrix @ query_vec.T).toarray().ravel()
-        if not len(scores):
-            return []
-        if chapter_scope:
-            allowed_indexes = [
-                idx
-                for idx, document in enumerate(documents)
-                if scope_filter(int(document.get("chapter", 0)), chapter_scope)
-            ]
-        else:
-            allowed_indexes = list(range(len(documents)))
-        if not allowed_indexes:
-            return []
-        filtered_scores = np.array([scores[idx] for idx in allowed_indexes])
-        ranked = np.argsort(filtered_scores)[::-1][: top_k * 4]
-        hits: list[RetrievalHit] = []
-        for filtered_index in ranked:
-            index = allowed_indexes[int(filtered_index)]
-            score = float(scores[index])
-            if score <= 0:
-                continue
-            document = documents[int(index)]
-            hits.append(RetrievalHit(target=target, document=document, score=score))
-            if len(hits) >= top_k:
-                break
-        return hits
+        Args:
+            query: User query string.
+            targets: List of target names to search.
+            chapter_scope: Chapter range for filtering.
+            top_k: Maximum results to return.
+            simulate: Simulation mode for testing (deprecated).
+
+        Returns:
+            List of RetrievalHit objects.
+        """
+        raw_hits = self.orchestrator.retrieve(
+            book_index=self.book_index,
+            query=query,
+            targets=targets,
+            chapter_scope=chapter_scope,
+            top_k=top_k,
+        )
+        return [
+            RetrievalHit(target=hit.target, document=hit.document, score=hit.score)
+            for hit in raw_hits
+        ]
+

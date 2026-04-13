@@ -21,6 +21,7 @@ from .novel_heuristics import (
 )
 from .indexing import ALIAS_MAP, COMMON_SURNAMES, BookIndexRepository, PERSON_RE, TITLE_PERSON_RE, scope_filter
 from .llm import LLMResponse, MiniMaxClient
+from .embedding import create_embedding_provider
 from .models import (
     APIWarning,
     AskRequest,
@@ -182,6 +183,8 @@ GRAPH_ALIAS_LOOKUP = {
 ARTIFACT_LABELS = {
     "manifest": "书目状态",
     "chapters": "分章结果",
+    "scene_segments": "场景片段",
+    "character_registry": "角色注册表",
     "chapter_chunks": "切片结果",
     "chapter_summaries": "章节摘要",
     "event_timeline": "事件时间线",
@@ -205,8 +208,10 @@ class NovelSystemService:
         self.session_memory: dict[str, list[ConversationTurn]] = {}
         self.token_usage: dict[str, dict[str, int]] = defaultdict(lambda: {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0})
         self._novel_configs: dict[str, NovelConfig] = {}  # 缓存小说配置
+        # Embedding Provider (本地 OpenVINO 加速)
+        self.embedding_provider = create_embedding_provider(self.config)
         # 验证层组件
-        self.semantic_scorer = SemanticScorer(llm_client=self.llm) if self.llm.enabled else None
+        self.semantic_scorer = SemanticScorer(embedding_provider=self.embedding_provider)
         self.evidence_gate = EvidenceGate(semantic_scorer=self.semantic_scorer)
         self.answer_validator = AnswerValidator()
         self.continuation_validator = ContinuationValidator()

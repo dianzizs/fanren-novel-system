@@ -161,7 +161,8 @@ class TestAnswerValidator:
             evidence=[],
             gate_result=gate_result,
         )
-        assert result.confidence in ["medium", "high"]
+        # 低证据 + 空证据列表应该导致低置信度
+        assert result.confidence == "low"
 
 
 # === Continuation Validator 测试 ===

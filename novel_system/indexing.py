@@ -175,6 +175,8 @@ class BookIndexRepository:
         filenames = {
             "manifest": "manifest.json",
             "chapters": "chapters.json",
+            "scene_segments": "scene_segments.json",
+            "character_registry": "character_registry.json",
             "chapter_chunks": "chapter_chunks.json",
             "chapter_summaries": "chapter_summaries.json",
             "event_timeline": "event_timeline.json",

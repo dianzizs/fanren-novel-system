@@ -168,6 +168,7 @@ class RuleBasedPlanner:
                 task_type="copyright_request",
                 retrieval_needed=False,
                 retrieval_targets=[],
+                retrieval_intent="copyright_guard",
                 constraints=["copyright_guard"],
                 success_criteria=["refuse_long_quote", "offer_summary"],
             )
@@ -178,6 +179,7 @@ class RuleBasedPlanner:
                 task_type="continuation",
                 retrieval_needed=True,
                 retrieval_targets=["recent_plot", "character_card", "canon_memory", "style_samples"],
+                retrieval_intent="scene_evidence",
                 constraints=["stay_in_scope", "no_direct_long_quote", "consistency_check_before_output"],
                 success_criteria=["character_consistent", "no_spoiler_beyond_scope", "style_close"],
             )
@@ -188,6 +190,7 @@ class RuleBasedPlanner:
                 task_type="summary",
                 retrieval_needed=True,
                 retrieval_targets=["chapter_summaries", "event_timeline", "chapter_chunks"],
+                retrieval_intent="scene_evidence",
                 constraints=["ordered_summary", "grounded_answer"],
                 success_criteria=["key_events_covered", "no_spoiler_beyond_scope"],
             )
@@ -203,6 +206,7 @@ class RuleBasedPlanner:
                 task_type="extract",
                 retrieval_needed=True,
                 retrieval_targets=retrieval_targets,
+                retrieval_intent="alias_resolution" if "人物" in query or "谁" in query else "scene_evidence",
                 constraints=["structured_output", "grounded_answer"],
                 success_criteria=["fields_complete", "no_spoiler_beyond_scope"],
             )
@@ -213,6 +217,7 @@ class RuleBasedPlanner:
                 task_type="analysis",
                 retrieval_needed=True,
                 retrieval_targets=["character_card", "recent_plot"],
+                retrieval_intent="alias_resolution",
                 constraints=["brief_answer", "grounded_reason"],
                 success_criteria=["clear_position", "evidence_backed"],
             )
@@ -223,16 +228,20 @@ class RuleBasedPlanner:
                 task_type="qa",
                 retrieval_needed=True,
                 retrieval_targets=["recent_plot", "canon_memory", "chapter_chunks"],
+                retrieval_intent="causal_chain",
                 constraints=["grounded_answer", "cite_evidence", "no_spoiler_beyond_scope"],
                 success_criteria=["answer_correct", "scope_guard"],
             )
             return planner, memory
 
         retrieval_targets = ["chapter_chunks"]
+        retrieval_intent = "scene_evidence"
         if any(keyword in query for keyword in ("为什么", "结果", "怎么", "原因")):
             retrieval_targets = ["event_timeline", "chapter_chunks"]
+            retrieval_intent = "causal_chain"
         if any(keyword in query for keyword in ("人物", "谁", "关系", "韩立", "张铁", "墨大夫", "舞岩", "韩胖子", "三叔")):
             retrieval_targets = ["character_card", *retrieval_targets]
+            retrieval_intent = "alias_resolution"
         if any(keyword in query for keyword in ("瓶子", "后来", "现在")):
             retrieval_targets = ["recent_plot", *retrieval_targets]
         if multimodal:
@@ -241,6 +250,7 @@ class RuleBasedPlanner:
             task_type="qa",
             retrieval_needed=True,
             retrieval_targets=list(dict.fromkeys(retrieval_targets)),
+            retrieval_intent=retrieval_intent,
             constraints=["grounded_answer", "cite_evidence", "no_spoiler_beyond_scope"],
             success_criteria=["answer_correct", "answer_grounded"],
         )
