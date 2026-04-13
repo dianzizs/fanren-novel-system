@@ -50,10 +50,23 @@ class SearchOrchestrator:
             # Filter by chapter scope
             if chapter_scope:
                 docs = [doc for doc in docs if self._in_scope(doc, chapter_scope)]
+
+            # 特殊处理：character_card 精确别名匹配
             if target == "character_card":
                 alias_hits = self._exact_character_hits(query, docs)
                 hits.extend(alias_hits)
-            hits.extend(self._sparse_fallback(query, docs, target))
+
+            # TF-IDF 检索
+            vectorizer = book_index.vectorizers.get(target)
+            matrix = book_index.matrices.get(target)
+
+            if vectorizer is not None and matrix is not None:
+                tfidf_hits = self._tfidf_search(query, docs, vectorizer, matrix, target, top_k)
+                hits.extend(tfidf_hits)
+            else:
+                # 回退到字符级匹配
+                hits.extend(self._sparse_fallback(query, docs, target))
+
         deduped = self._dedupe_candidates(hits)
         deduped.sort(key=lambda item: item["score"], reverse=True)
         return [
@@ -89,6 +102,46 @@ class SearchOrchestrator:
                     "document_id": doc["id"],
                     "document": doc,
                     "score": 1.0,
+                })
+        return hits
+
+    def _tfidf_search(
+        self,
+        query: str,
+        docs: list[dict[str, Any]],
+        vectorizer: Any,
+        matrix: Any,
+        target: str,
+        top_k: int,
+    ) -> list[dict[str, Any]]:
+        """使用 TF-IDF 进行检索。
+
+        Args:
+            query: 查询文本
+            docs: 文档列表
+            vectorizer: TF-IDF vectorizer
+            matrix: TF-IDF 矩阵
+            target: 检索目标名称
+            top_k: 返回数量
+
+        Returns:
+            命中结果列表
+        """
+        if not docs or matrix is None:
+            return []
+
+        query_vec = vectorizer.transform([query])
+        scores = (matrix @ query_vec.T).toarray().ravel()
+        top_indices = scores.argsort()[-top_k:][::-1]
+
+        hits = []
+        for idx in top_indices:
+            if scores[idx] > 0 and idx < len(docs):
+                hits.append({
+                    "target": target,
+                    "document_id": docs[idx].get("id", f"doc-{idx}"),
+                    "document": docs[idx],
+                    "score": float(scores[idx]),
                 })
         return hits
 
