@@ -1,0 +1,42 @@
+韩立: chapter=1, chapters=[1, 4, 5, 8, 13]
+张铁: NOT FOUND
+墨大夫: chapter=5, chapters=[5, 6, 7, 8, 9]
+韩胖子: NOT FOUND
+王护法: NOT FOUND
+岳堂主: NOT FOUND
+舞岩: NOT FOUND
+厉飞雨: NOT FOUND
+三叔: NOT FOUND
+
+--- All chars in scope 1-14 ---
+Total: 85
+  韩立: chapter=1
+  韩立一: chapter=1
+  韩立心: chapter=4
+  韩立不: chapter=6
+  韩立这: chapter=3
+  韩立就: chapter=7
+  韩立听: chapter=13
+  韩立有: chapter=4
+  时间: chapter=3
+  韩立也: chapter=10
+  韩立和: chapter=2
+  韩立自: chapter=4
+  韩立见: chapter=1
+  章完: chapter=1
+  韩立看: chapter=4
+  韩立没: chapter=2
+  成了一: chapter=14
+  韩立还: chapter=13
+  马上就: chapter=6
+  韩立脸: chapter=8
+  许多: chapter=1
+  韩立对: chapter=1
+  韩立大: chapter=7
+  韩立才: chapter=10
+  韩立等: chapter=3
+  段时间: chapter=2
+  韩立并: chapter=13
+  韩立望: chapter=4
+  成功: chapter=9
+  韩立皱: chapter=10

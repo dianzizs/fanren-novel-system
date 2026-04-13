@@ -1,10 +1,27 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from .models import ConversationTurn, PlannerOutput, Scope
+
+
+@dataclass
+class MemoryState:
+    """会话记忆状态"""
+    preferred_length: str = "normal"
+    wants_evidence: bool = False
+    no_spoiler: bool = False
+    scope_note: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "preferred_length": self.preferred_length,
+            "wants_evidence": self.wants_evidence,
+            "no_spoiler": self.no_spoiler,
+            "scope_note": self.scope_note,
+        }
 
 
 SHORT_PREFERENCE_RE = re.compile(r"(简短|短一点|精简|别太长)")
