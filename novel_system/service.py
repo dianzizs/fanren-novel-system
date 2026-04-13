@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import threading
+import time
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -23,20 +24,39 @@ from .llm import LLMResponse, MiniMaxClient
 from .models import (
     AskRequest,
     AskResponse,
+    AskTrace,
     BookInfo,
     CanonUpdateRequest,
     ContinueRequest,
     ContinuationResponse,
+    ContinuationTrace,
     ConversationTurn,
     EvaluationDashboardData,
     EvaluationMetric,
     EvidenceItem,
+    EvidenceSpan,
     PlannerOutput,
+    QueryRewriteTrace,
+    RetrievalHitTrace,
+    RetrievalTrace,
     Scope,
     TimelineEvent,
+    ValidationResult,
 )
 from .planner import MemoryState, QueryRewriter, RuleBasedPlanner
 from .retrieval import HybridRetriever, RetrievalHit
+from .tracing import TraceLogger, trace_logger
+from .validator import (
+    AnswerValidator,
+    AnswerValidationResult,
+    ContinuationValidator,
+    ContinuationValidationResult,
+    EvidenceGate,
+    EvidenceGateResult,
+    SpoilerGuard,
+    SpoilerRisk,
+    get_refusal_answer,
+)
 
 
 FUTURE_QUERY_RE = re.compile(r"(以后|后面|最终|最后|结局|真相|到底有什么用)")
@@ -183,6 +203,11 @@ class NovelSystemService:
         self.session_memory: dict[str, list[ConversationTurn]] = {}
         self.token_usage: dict[str, dict[str, int]] = defaultdict(lambda: {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0})
         self._novel_configs: dict[str, NovelConfig] = {}  # 缓存小说配置
+        # 验证层组件
+        self.evidence_gate = EvidenceGate()
+        self.answer_validator = AnswerValidator()
+        self.continuation_validator = ContinuationValidator()
+        self.spoiler_guard = SpoilerGuard()
         self.bootstrap_default_book()
 
     def _get_novel_config(self, book_id: str, book_index: Any = None) -> NovelConfig:
@@ -546,6 +571,10 @@ class NovelSystemService:
             self.index_default_book()
 
     def ask(self, book_id: str, request: AskRequest) -> AskResponse:
+        # === TRACING: 初始化追踪上下文 ===
+        trace_id = TraceLogger.generate_trace_id()
+        start_time = time.perf_counter()
+
         self.ensure_indexed(book_id)
         book_index = self.repo.load(book_id)
         multimodal = request.test_harness.get("simulate") == "image_only_input"
@@ -597,12 +626,24 @@ class NovelSystemService:
             planner.constraints = list(dict.fromkeys([*planner.constraints, "prompt_injection_isolation"]))
             planner.retrieval_targets = list(dict.fromkeys([*planner.retrieval_targets, "chapter_chunks"]))
 
-        # Query rewrite: use rewritten query for retrieval while keeping original info
+        # === TRACING: 记录 query rewrite ===
+        rewrite_start = time.perf_counter()
         rewritten = self.query_rewriter.rewrite(
             request.user_query,
             request.scope,
             request.conversation_history,
         )
+        rewrite_duration = (time.perf_counter() - rewrite_start) * 1000
+
+        query_rewrite_trace = QueryRewriteTrace(
+            original=rewritten.original,
+            rewritten=rewritten.rewritten,
+            expansions=rewritten.expansions,
+            duration_ms=round(rewrite_duration, 2),
+        )
+
+        # === TRACING: 记录 retrieval ===
+        retrieval_start = time.perf_counter()
         hits = self._retrieve_with_rewrite(
             book_index,
             rewritten,
@@ -622,6 +663,21 @@ class NovelSystemService:
                 success_criteria=planner.success_criteria,
             )
             hits = self._retrieve_with_rewrite(book_index, rewritten, fallback_planner, request.scope, request.top_k, None)
+        retrieval_duration = (time.perf_counter() - retrieval_start) * 1000
+
+        # === 验证层: Evidence Gate ===
+        gate_result = self.evidence_gate.evaluate(request.user_query, hits, request.scope)
+        if not gate_result.sufficient:
+            # 证据不足，返回拒答
+            refusal_answer = get_refusal_answer(gate_result.refusal_reason or "no_evidence", request.scope)
+            return AskResponse(
+                planner=planner,
+                answer=refusal_answer,
+                evidence=[],
+                uncertainty="high",
+                scope=request.scope,
+                memory=memory.to_dict(),
+            )
 
         heuristic = heuristic_answer(request.user_query, request.scope, memory)
         if planner.task_type == "continuation":
@@ -645,7 +701,73 @@ class NovelSystemService:
                 rewrite_notes=rewritten.expansions,
             )
         evidence = self._to_evidence_items(hits)
+        evidence_spans = self._to_evidence_spans(hits)
         uncertainty = self._estimate_uncertainty(answer, hits)
+
+        # === 验证层: Answer Validator ===
+        validation_result = self.answer_validator.validate(
+            query=request.user_query,
+            answer=answer,
+            evidence=evidence,
+            gate_result=gate_result,
+        )
+        # 根据验证结果调整置信度
+        if validation_result.confidence == "high":
+            uncertainty = "high"
+        elif validation_result.confidence == "medium" and uncertainty == "low":
+            uncertainty = "medium"
+
+        # === 验证层: Spoiler Guard (自动检测) ===
+        total_chapters = int(book_index.manifest.get("chapter_count", 0))
+        event_timeline = book_index.corpora.get("event_timeline", [])
+        spoiler_risk = self.spoiler_guard.detect_spoiler(
+            content=answer,
+            scope=request.scope,
+            total_chapters=total_chapters,
+            event_timeline=event_timeline,
+        )
+        # 如果检测到剧透，处理答案
+        if spoiler_risk.level in ["medium", "high"]:
+            answer = self.spoiler_guard.redact_content(answer, spoiler_risk)
+            if spoiler_risk.level == "high":
+                uncertainty = "high"
+
+        # === TRACING: 构建追踪数据 ===
+        total_duration = (time.perf_counter() - start_time) * 1000
+
+        retrieval_trace = RetrievalTrace(
+            targets=planner.retrieval_targets,
+            hits_count=len(hits),
+            hits=[
+                RetrievalHitTrace(
+                    target=h.target,
+                    document_id=h.document.get("id"),
+                    chapter=h.document.get("chapter"),
+                    score=round(h.score, 4),
+                )
+                for h in hits[:10]
+            ],
+            duration_ms=round(retrieval_duration, 2),
+        )
+
+        ask_trace = AskTrace(
+            trace_id=trace_id,
+            book_id=book_id,
+            session_id=request.session_id,
+            timestamp=datetime.now(),
+            query_rewrite=query_rewrite_trace,
+            planner=planner,
+            retrieval=retrieval_trace,
+            evidence_count=len(evidence),
+            evidence_spans=evidence_spans,
+            uncertainty=uncertainty,
+            total_duration_ms=round(total_duration, 2),
+            memory_state=memory.to_dict(),
+        )
+
+        # === TRACING: 写入日志 ===
+        trace_logger.log_ask_trace(ask_trace)
+
         self._remember_turns(request.session_id, request.user_query, answer)
         return AskResponse(
             planner=planner,
@@ -654,9 +776,14 @@ class NovelSystemService:
             uncertainty=uncertainty,
             scope=request.scope,
             memory=memory.to_dict(),
+            trace=ask_trace if request.debug else None,
         )
 
     def continue_story(self, book_id: str, request: ContinueRequest) -> ContinuationResponse:
+        # === TRACING: 初始化追踪上下文 ===
+        trace_id = TraceLogger.generate_trace_id()
+        start_time = time.perf_counter()
+
         self.ensure_indexed(book_id)
         book_index = self.repo.load(book_id)
         planner, memory = self.planner.plan(request.user_query, request.scope, request.conversation_history)
@@ -669,11 +796,24 @@ class NovelSystemService:
                 success_criteria=["character_consistent", "no_spoiler_beyond_scope"],
             )
 
+        # === TRACING: 记录 query rewrite ===
+        rewrite_start = time.perf_counter()
         rewritten = self.query_rewriter.rewrite(
             request.user_query,
             request.scope,
             request.conversation_history,
         )
+        rewrite_duration = (time.perf_counter() - rewrite_start) * 1000
+
+        query_rewrite_trace = QueryRewriteTrace(
+            original=rewritten.original,
+            rewritten=rewritten.rewritten,
+            expansions=rewritten.expansions,
+            duration_ms=round(rewrite_duration, 2),
+        )
+
+        # === TRACING: 记录 retrieval ===
+        retrieval_start = time.perf_counter()
         hits = self._retrieve_with_rewrite(
             book_index,
             rewritten,
@@ -682,6 +822,8 @@ class NovelSystemService:
             request.top_k,
             request.test_harness.get("simulate"),
         )
+        retrieval_duration = (time.perf_counter() - retrieval_start) * 1000
+
         answer, validation = self._execute_continuation_skill(
             book_id,
             query=request.user_query,
@@ -690,7 +832,85 @@ class NovelSystemService:
             scope=request.scope,
         )
         evidence = self._to_evidence_items(hits)
+        evidence_spans = self._to_evidence_spans(hits)
+
+        # === 验证层: Continuation Validator ===
+        character_cards = book_index.corpora.get("character_card", [])
+        world_rules = book_index.corpora.get("world_rule", [])
+        style_samples = [doc.get("text", "") for doc in book_index.corpora.get("style_samples", [])[:5]]
+        cont_validation = self.continuation_validator.validate(
+            continuation=answer,
+            character_cards=character_cards,
+            world_rules=world_rules,
+            style_samples=style_samples,
+            scope=request.scope,
+        )
+        # 合并验证结果
+        if cont_validation.character_issues:
+            validation.setdefault("notes", []).extend(cont_validation.character_issues)
+        if cont_validation.world_issues:
+            validation.setdefault("notes", []).extend(cont_validation.world_issues)
+
+        # === 验证层: Spoiler Guard ===
+        total_chapters = int(book_index.manifest.get("chapter_count", 0))
+        event_timeline = book_index.corpora.get("event_timeline", [])
+        spoiler_risk = self.spoiler_guard.detect_spoiler(
+            content=answer,
+            scope=request.scope,
+            total_chapters=total_chapters,
+            event_timeline=event_timeline,
+        )
+        if spoiler_risk.level in ["medium", "high"]:
+            answer = self.spoiler_guard.redact_content(answer, spoiler_risk)
+            validation.setdefault("notes", []).append("检测到剧透风险，已处理")
+
         uncertainty = "medium" if validation.get("adjusted") else "low"
+        if cont_validation.overall_score < 0.7:
+            uncertainty = "medium"
+
+        # === TRACING: 构建追踪数据 ===
+        total_duration = (time.perf_counter() - start_time) * 1000
+
+        retrieval_trace = RetrievalTrace(
+            targets=planner.retrieval_targets,
+            hits_count=len(hits),
+            hits=[
+                RetrievalHitTrace(
+                    target=h.target,
+                    document_id=h.document.get("id"),
+                    chapter=h.document.get("chapter"),
+                    score=round(h.score, 4),
+                )
+                for h in hits[:10]
+            ],
+            duration_ms=round(retrieval_duration, 2),
+        )
+
+        validation_result = ValidationResult(
+            adjusted=validation.get("adjusted", False),
+            notes=validation.get("notes", []),
+            consistency_passed=validation.get("consistency_passed", True),
+        )
+
+        continuation_trace = ContinuationTrace(
+            trace_id=trace_id,
+            book_id=book_id,
+            session_id=request.session_id,
+            timestamp=datetime.now(),
+            query_rewrite=query_rewrite_trace,
+            planner=planner,
+            retrieval=retrieval_trace,
+            evidence_count=len(evidence),
+            evidence_spans=evidence_spans,
+            uncertainty=uncertainty,
+            validation=validation_result,
+            total_duration_ms=round(total_duration, 2),
+            memory_state=memory.to_dict(),
+        )
+
+        # === TRACING: 写入日志 ===
+        trace_logger.log_continuation_trace(continuation_trace)
+
         self._remember_turns(request.session_id, request.user_query, answer)
         return ContinuationResponse(
             planner=planner,
@@ -699,6 +919,7 @@ class NovelSystemService:
             uncertainty=uncertainty,
             scope=request.scope,
             validation=validation,
+            trace=continuation_trace if request.debug else None,
         )
 
     def get_canon(self, book_id: str, scope: Scope | None = None) -> dict[str, Any]:
@@ -1391,6 +1612,21 @@ class NovelSystemService:
                 )
             )
         return items
+
+    def _to_evidence_spans(self, hits: list[RetrievalHit]) -> list[EvidenceSpan]:
+        """将检索结果转换为 EvidenceSpan 列表"""
+        spans = []
+        for hit in hits[:5]:
+            spans.append(
+                EvidenceSpan(
+                    document_id=hit.document.get("id", ""),
+                    chapter=hit.document.get("chapter"),
+                    text_snippet=self._trim_quote(hit.document.get("text", ""), 120),
+                    relevance_score=round(hit.score, 4),
+                    source_type=hit.target,
+                )
+            )
+        return spans
 
     def _trim_quote(self, text: str, limit: int = 100) -> str:
         compact = re.sub(r"\s+", " ", text).strip()

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -55,14 +55,96 @@ class EvidenceItem(BaseModel):
     source: str
 
 
+# === Trace 数据模型 ===
+
+
+class QueryRewriteTrace(BaseModel):
+    """查询重写追踪"""
+    original: str
+    rewritten: str
+    expansions: list[str] = Field(default_factory=list)
+    duration_ms: Optional[float] = None
+
+
+class RetrievalHitTrace(BaseModel):
+    """单个检索命中的简化追踪"""
+    target: str
+    document_id: Optional[str] = None
+    chapter: Optional[int] = None
+    score: float
+
+
+class RetrievalTrace(BaseModel):
+    """检索追踪"""
+    targets: list[str]
+    hits_count: int
+    hits: list[RetrievalHitTrace] = Field(default_factory=list)
+    duration_ms: Optional[float] = None
+
+
+class EvidenceSpan(BaseModel):
+    """证据片段追踪"""
+    # 位置范围
+    document_id: str
+    start_offset: Optional[int] = None
+    end_offset: Optional[int] = None
+    chapter: Optional[int] = None
+
+    # 证据片段详情
+    text_snippet: str
+    relevance_score: float
+    source_type: str
+
+
+class ValidationResult(BaseModel):
+    """验证结果（仅续写）"""
+    adjusted: bool
+    notes: list[str] = Field(default_factory=list)
+    consistency_passed: bool = True
+
+
+class AskTrace(BaseModel):
+    """ask() 完整追踪"""
+    trace_id: str
+    book_id: str
+    session_id: str
+    timestamp: datetime
+    query_rewrite: Optional[QueryRewriteTrace] = None
+    planner: PlannerOutput
+    retrieval: RetrievalTrace
+    evidence_count: int
+    evidence_spans: list[EvidenceSpan] = Field(default_factory=list)
+    uncertainty: Literal["low", "medium", "high"]
+    total_duration_ms: float
+    memory_state: dict[str, Any] = Field(default_factory=dict)
+
+
+class ContinuationTrace(BaseModel):
+    """continue_story() 完整追踪"""
+    trace_id: str
+    book_id: str
+    session_id: str
+    timestamp: datetime
+    query_rewrite: Optional[QueryRewriteTrace] = None
+    planner: PlannerOutput
+    retrieval: RetrievalTrace
+    evidence_count: int
+    evidence_spans: list[EvidenceSpan] = Field(default_factory=list)
+    uncertainty: Literal["low", "medium", "high"]
+    validation: ValidationResult
+    total_duration_ms: float
+    memory_state: dict[str, Any] = Field(default_factory=dict)
+
+
 class AskRequest(BaseModel):
     user_query: str
     scope: Scope = Field(default_factory=Scope)
     conversation_history: list[ConversationTurn] = Field(default_factory=list)
     session_id: str = "default"
     top_k: int = 6
-    retrieved_text: str | None = None
+    retrieved_text: Optional[str] = None
     test_harness: dict[str, Any] = Field(default_factory=dict)
+    debug: bool = False  # 启用追踪返回
 
 
 class ContinueRequest(BaseModel):
@@ -70,9 +152,10 @@ class ContinueRequest(BaseModel):
     scope: Scope = Field(default_factory=Scope)
     conversation_history: list[ConversationTurn] = Field(default_factory=list)
     session_id: str = "default"
-    desired_length: tuple[int, int] | None = None
+    desired_length: Optional[tuple[int, int]] = None
     top_k: int = 8
     test_harness: dict[str, Any] = Field(default_factory=dict)
+    debug: bool = False  # 启用追踪返回
 
 
 class CanonUpdateRequest(BaseModel):
@@ -80,8 +163,8 @@ class CanonUpdateRequest(BaseModel):
 
 
 class BookCreateRequest(BaseModel):
-    title: str | None = None
-    file_path: str | None = None
+    title: Optional[str] = None
+    file_path: Optional[str] = None
 
 
 class BookInfo(BaseModel):
@@ -92,7 +175,7 @@ class BookInfo(BaseModel):
     chapter_count: int = 0
     chunk_count: int = 0
     indexed: bool = False
-    indexed_at: datetime | None = None
+    indexed_at: Optional[datetime] = None
     status: Literal["pending", "indexing", "ready", "error"] = "pending"
     index_progress: float = 0.0
 
@@ -104,6 +187,7 @@ class AskResponse(BaseModel):
     uncertainty: Literal["low", "medium", "high"]
     scope: Scope
     memory: dict[str, Any] = Field(default_factory=dict)
+    trace: Optional[AskTrace] = None  # 可选追踪数据
 
 
 class ContinuationResponse(BaseModel):
@@ -113,6 +197,7 @@ class ContinuationResponse(BaseModel):
     uncertainty: Literal["low", "medium", "high"]
     scope: Scope
     validation: dict[str, Any] = Field(default_factory=dict)
+    trace: Optional[ContinuationTrace] = None  # 可选追踪数据
 
 
 class TimelineEvent(BaseModel):
@@ -124,8 +209,8 @@ class TimelineEvent(BaseModel):
 
 class EvaluationMetric(BaseModel):
     name: str
-    value: float | None = None
-    note: str | None = None
+    value: Optional[float] = None
+    note: Optional[str] = None
 
 
 class EvaluationDashboardData(BaseModel):

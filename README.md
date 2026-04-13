@@ -94,6 +94,9 @@ novelqa-system/
 │   ├── planner.py        # 查询规划和重写
 │   ├── retrieval.py      # 混合检索引擎
 │   ├── service.py        # 核心业务逻辑
+│   ├── tracing.py        # 追踪日志基础设施
+│   ├── validator.py      # 验证层（证据门控、答案验证、剧透防护）
+│   ├── semantic_scorer.py # 语义相关性评分
 │   └── novel_heuristics.py  # 小说特定规则（可选）
 ├── scripts/              # 脚本工具
 │   ├── build_index.py    # 索引构建脚本
@@ -168,6 +171,36 @@ novelqa-system/
 3. **上下文提取**: 从对话历史中提取关键人物和实体
 4. **章节引用**: 提取章节号并扩展到查询中
 
+## 追踪功能
+
+系统支持完整的请求追踪，用于调试和分析：
+
+```bash
+# 启用追踪返回
+curl -X POST "http://localhost:8000/api/books/{book_id}/ask" \
+  -H "Content-Type: application/json" \
+  -d '{"user_query": "问题内容", "debug": true}'
+```
+
+返回的响应中会包含 `trace` 字段，包含：
+- `query_rewrite`: 查询重写详情（原文、重写后、扩展词）
+- `retrieval`: 检索详情（目标、命中数、Top10 命中）
+- `evidence_spans`: 证据片段详情
+- `total_duration_ms`: 总耗时
+
+环境变量控制：
+- `TRACE_ENABLED=true` - 启用追踪日志写入文件
+- `TRACE_LOG_LEVEL=INFO` - 日志级别
+
+## 验证层
+
+系统内置多层验证机制：
+
+1. **Evidence Gate**: 检测检索结果是否足以回答问题，不足时返回拒答
+2. **Answer Validator**: 评估回答与证据的一致性
+3. **Continuation Validator**: 检查续写内容的人物一致性和世界观合规性
+4. **Spoiler Guard**: 自动检测并处理超出查询范围的剧透内容
+
 ## 人物关系图谱
 
 系统自动提取人物并构建关系网络：
@@ -218,6 +251,25 @@ RetrievalTarget = Literal[
 - **检索**: TF-IDF 语义检索
 - **LLM**: MiniMax API
 - **数据存储**: 本地文件系统
+
+## 更新日志
+
+### 2026-04-13 - 验证层与追踪系统
+
+**新功能：**
+- **追踪系统 (Tracing)**: 完整的请求追踪能力，记录查询重写、检索、验证等各阶段详情
+  - 通过 `debug=true` 参数启用，返回完整追踪数据
+  - 支持环境变量配置：`TRACE_ENABLED`、`TRACE_LOG_LEVEL`
+- **验证层 (Validation Layer)**: 多层次的内容验证机制
+  - **Evidence Gate**: 证据门控，检测检索结果是否足以回答问题
+  - **Answer Validator**: 答案验证器，评估回答质量
+  - **Continuation Validator**: 续写验证器，检查人物一致性、世界观合规性
+  - **Spoiler Guard**: 剧透防护，自动检测并处理超出范围的剧透内容
+- **语义评分器**: 新增语义相关性评分模块
+
+**改进：**
+- 类型注解兼容性优化（使用 `Optional[X]` 替代 `X | None`）
+- 移除 dataclass slots 以提升兼容性
 
 ## 许可证
 

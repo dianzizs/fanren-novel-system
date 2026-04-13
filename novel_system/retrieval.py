@@ -8,7 +8,7 @@ import numpy as np
 from .indexing import LoadedBookIndex, scope_filter
 
 
-@dataclass(slots=True)
+@dataclass
 class RetrievalHit:
     target: str
     document: dict[str, Any]

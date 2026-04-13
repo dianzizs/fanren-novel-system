@@ -21,7 +21,7 @@ def _load_dotenv(dotenv_path: Path) -> None:
         os.environ.setdefault(key, value)
 
 
-@dataclass(slots=True)
+@dataclass
 class AppConfig:
     root_dir: Path
     data_dir: Path
@@ -33,6 +33,9 @@ class AppConfig:
     minimax_api_key: str
     minimax_base_url: str
     minimax_chat_model: str
+    # Tracing 配置
+    trace_enabled: bool
+    trace_log_level: str
 
     @classmethod
     def load(cls) -> "AppConfig":
@@ -62,5 +65,7 @@ class AppConfig:
                 "MINIMAX_CHAT_MODEL",
                 "MiniMax-m2.7-HighSpeed",
             ),
+            trace_enabled=os.getenv("TRACE_ENABLED", "true").lower() == "true",
+            trace_log_level=os.getenv("TRACE_LOG_LEVEL", "INFO"),
         )
 

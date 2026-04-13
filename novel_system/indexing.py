@@ -97,7 +97,7 @@ ALIAS_MAP = {
 }
 
 
-@dataclass(slots=True)
+@dataclass
 class LoadedBookIndex:
     manifest: dict[str, Any]
     chapters: list[dict[str, Any]]

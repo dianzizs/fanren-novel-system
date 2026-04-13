@@ -57,7 +57,7 @@ RECENT_TOPIC_RES = [
 ]
 
 
-@dataclass(slots=True)
+@dataclass
 class RewrittenQuery:
     original: str
     rewritten: str
