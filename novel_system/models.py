@@ -134,7 +134,7 @@ class AskTrace(BaseModel):
     retrieval: RetrievalTrace
     evidence_count: int
     evidence_spans: list[EvidenceSpan] = Field(default_factory=list)
-    uncertainty: Literal["low", "medium", "high"]
+    confidence: Literal["low", "medium", "high"]
     total_duration_ms: float
     memory_state: dict[str, Any] = Field(default_factory=dict)
 
@@ -150,7 +150,7 @@ class ContinuationTrace(BaseModel):
     retrieval: RetrievalTrace
     evidence_count: int
     evidence_spans: list[EvidenceSpan] = Field(default_factory=list)
-    uncertainty: Literal["low", "medium", "high"]
+    confidence: Literal["low", "medium", "high"]
     validation: ValidationResult
     total_duration_ms: float
     memory_state: dict[str, Any] = Field(default_factory=dict)
