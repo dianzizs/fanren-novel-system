@@ -53,6 +53,9 @@ class BookImportArtifactsTest(unittest.TestCase):
             minimax_api_key="",
             minimax_base_url="https://api.minimax.chat/v1",
             minimax_chat_model="MiniMax-m2.7-HighSpeed",
+            minimax_embedding_model="embo-01",
+            trace_enabled=True,
+            trace_log_level="INFO",
         )
         self.service = NovelSystemService(self.config)
 

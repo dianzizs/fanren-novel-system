@@ -55,6 +55,14 @@ class EvidenceItem(BaseModel):
     source: str
 
 
+class APIWarning(BaseModel):
+    """API 告警"""
+    type: Literal["embedding_fallback", "api_error", "rate_limit"]
+    message: str
+    severity: Literal["info", "warning", "error"]
+    timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
+
+
 # === Trace 数据模型 ===
 
 
@@ -187,6 +195,7 @@ class AskResponse(BaseModel):
     uncertainty: Literal["low", "medium", "high"]
     scope: Scope
     memory: dict[str, Any] = Field(default_factory=dict)
+    warnings: list[APIWarning] = Field(default_factory=list)
     trace: Optional[AskTrace] = None  # 可选追踪数据
 
 

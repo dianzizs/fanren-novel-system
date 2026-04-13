@@ -33,6 +33,7 @@ class AppConfig:
     minimax_api_key: str
     minimax_base_url: str
     minimax_chat_model: str
+    minimax_embedding_model: str
     # Tracing 配置
     trace_enabled: bool
     trace_log_level: str
@@ -64,6 +65,10 @@ class AppConfig:
             minimax_chat_model=os.getenv(
                 "MINIMAX_CHAT_MODEL",
                 "MiniMax-m2.7-HighSpeed",
+            ),
+            minimax_embedding_model=os.getenv(
+                "MINIMAX_EMBEDDING_MODEL",
+                "embo-01",
             ),
             trace_enabled=os.getenv("TRACE_ENABLED", "true").lower() == "true",
             trace_log_level=os.getenv("TRACE_LOG_LEVEL", "INFO"),

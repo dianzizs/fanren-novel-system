@@ -36,7 +36,7 @@ class TestEvidenceGate:
 
     def test_empty_hits_refusal(self, gate: EvidenceGate):
         """测试空检索结果拒答"""
-        result = gate.evaluate("韩立的师父是谁？", [], Scope(chapters=[1, 2]))
+        result, warning = gate.evaluate("韩立的师父是谁？", [], Scope(chapters=[1, 2]))
         assert not result.sufficient
         assert result.refusal_reason == "no_evidence"
         assert result.relevance_score == 0.0
@@ -45,7 +45,7 @@ class TestEvidenceGate:
         """测试低相关性拒答"""
         # 模拟低相关性检索结果
         hits = [MockHit(target="chapter_chunks", score=0.1, text="无关内容")]
-        result = gate.evaluate("韩立的师父是谁？", hits, Scope(chapters=[1, 2]))
+        result, warning = gate.evaluate("韩立的师父是谁？", hits, Scope(chapters=[1, 2]))
         assert not result.sufficient
         assert result.refusal_reason == "low_relevance"
 
@@ -56,14 +56,14 @@ class TestEvidenceGate:
             MockHit(target="chapter_chunks", score=0.6, text="韩立的师父是墨大夫"),
             MockHit(target="character_card", score=0.5, text="墨大夫，韩立的师父"),
         ]
-        result = gate.evaluate("韩立的师父是谁？", hits, Scope(chapters=[1, 10]))
+        result, warning = gate.evaluate("韩立的师父是谁？", hits, Scope(chapters=[1, 10]))
         assert result.sufficient
         assert result.relevance_score > 0.3
 
     def test_medium_confidence_with_few_hits(self, gate: EvidenceGate):
         """测试少量命中的中等置信度"""
         hits = [MockHit(target="chapter_chunks", score=0.4, text="韩立修炼长春功")]
-        result = gate.evaluate("韩立修炼什么功法？", hits, Scope(chapters=[1, 5]))
+        result, warning = gate.evaluate("韩立修炼什么功法？", hits, Scope(chapters=[1, 5]))
         assert result.sufficient  # 仍然充分，但置信度较低
         assert result.confidence_adjustment < 1.0
 
@@ -335,7 +335,7 @@ class TestValidatorIntegration:
         validator = AnswerValidator()
 
         # 模拟无检索结果
-        gate_result = gate.evaluate("问题", [], Scope(chapters=[1, 10]))
+        gate_result, warning = gate.evaluate("问题", [], Scope(chapters=[1, 10]))
         assert not gate_result.sufficient
 
         # 应该返回拒答
@@ -349,7 +349,7 @@ class TestValidatorIntegration:
 
         # 模拟检索结果
         hits = [MockHit(target="test", score=0.6, text="相关内容")]
-        gate_result = gate.evaluate("问题", hits, Scope(chapters=[1, 10]))
+        gate_result, warning = gate.evaluate("问题", hits, Scope(chapters=[1, 10]))
         assert gate_result.sufficient
 
         # 验证答案

@@ -22,6 +22,7 @@ from .novel_heuristics import (
 from .indexing import ALIAS_MAP, COMMON_SURNAMES, BookIndexRepository, PERSON_RE, TITLE_PERSON_RE, scope_filter
 from .llm import LLMResponse, MiniMaxClient
 from .models import (
+    APIWarning,
     AskRequest,
     AskResponse,
     AskTrace,
@@ -45,6 +46,7 @@ from .models import (
 )
 from .planner import MemoryState, QueryRewriter, RuleBasedPlanner
 from .retrieval import HybridRetriever, RetrievalHit
+from .semantic_scorer import SemanticScorer
 from .tracing import TraceLogger, trace_logger
 from .validator import (
     AnswerValidator,
@@ -204,7 +206,8 @@ class NovelSystemService:
         self.token_usage: dict[str, dict[str, int]] = defaultdict(lambda: {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0})
         self._novel_configs: dict[str, NovelConfig] = {}  # 缓存小说配置
         # 验证层组件
-        self.evidence_gate = EvidenceGate()
+        self.semantic_scorer = SemanticScorer(llm_client=self.llm) if self.llm.enabled else None
+        self.evidence_gate = EvidenceGate(semantic_scorer=self.semantic_scorer)
         self.answer_validator = AnswerValidator()
         self.continuation_validator = ContinuationValidator()
         self.spoiler_guard = SpoilerGuard()
@@ -666,7 +669,11 @@ class NovelSystemService:
         retrieval_duration = (time.perf_counter() - retrieval_start) * 1000
 
         # === 验证层: Evidence Gate ===
-        gate_result = self.evidence_gate.evaluate(request.user_query, hits, request.scope)
+        gate_result, gate_warning = self.evidence_gate.evaluate(request.user_query, hits, request.scope)
+        warnings: list[APIWarning] = []
+        if gate_warning:
+            warnings.append(gate_warning)
+
         if not gate_result.sufficient:
             # 证据不足，返回拒答
             refusal_answer = get_refusal_answer(gate_result.refusal_reason or "no_evidence", request.scope)
@@ -677,6 +684,7 @@ class NovelSystemService:
                 uncertainty="high",
                 scope=request.scope,
                 memory=memory.to_dict(),
+                warnings=warnings,
             )
 
         heuristic = heuristic_answer(request.user_query, request.scope, memory)
@@ -776,6 +784,7 @@ class NovelSystemService:
             uncertainty=uncertainty,
             scope=request.scope,
             memory=memory.to_dict(),
+            warnings=warnings,
             trace=ask_trace if request.debug else None,
         )
 

@@ -14,11 +14,14 @@ import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, Optional
+from typing import TYPE_CHECKING, Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from .models import EvidenceItem, Scope
+from .models import APIWarning, EvidenceItem, Scope
+
+if TYPE_CHECKING:
+    from .semantic_scorer import SemanticScorer
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +84,7 @@ class EvidenceGate:
 
     评估检索结果是否充分支持回答：
     1. 检查检索结果是否为空
-    2. 计算相关性评分
+    2. 计算相关性评分（语义相似度 + BM25 混合）
     3. 判断是否需要拒答
     """
 
@@ -90,12 +93,21 @@ class EvidenceGate:
     MEDIUM_RELEVANCE_THRESHOLD = 0.3
     MIN_HITS_FOR_CONFIDENCE = 2
 
+    def __init__(self, semantic_scorer: Optional["SemanticScorer"] = None):
+        """
+        初始化证据门槛
+
+        Args:
+            semantic_scorer: 语义相似度评分器（可选）
+        """
+        self.semantic_scorer = semantic_scorer
+
     def evaluate(
         self,
         query: str,
         hits: list[Any],  # list[RetrievalHit]
         scope: Scope,
-    ) -> EvidenceGateResult:
+    ) -> tuple[EvidenceGateResult, Optional[APIWarning]]:
         """
         评估证据是否充分支持回答
 
@@ -105,9 +117,10 @@ class EvidenceGate:
             scope: 章节范围
 
         Returns:
-            EvidenceGateResult: 评估结果
+            tuple: (评估结果, 告警或 None)
         """
         details: list[str] = []
+        warning: Optional[APIWarning] = None
 
         # 1. 检查空结果
         if not hits:
@@ -117,10 +130,13 @@ class EvidenceGate:
                 refusal_reason="no_evidence",
                 confidence_adjustment=0.0,
                 details=["检索结果为空，无法提供基于证据的回答"],
-            )
+            ), None
 
-        # 2. 计算相关性评分
-        relevance_score = self._compute_relevance(query, hits)
+        # 2. 计算相关性评分（使用语义相似度或回退到 BM25）
+        if self.semantic_scorer:
+            relevance_score, warning = self.semantic_scorer.compute_similarity_with_hits(query, hits)
+        else:
+            relevance_score = self._compute_relevance(query, hits)
         details.append(f"相关性评分: {relevance_score:.2f}")
 
         # 3. 评估命中数量
@@ -135,7 +151,7 @@ class EvidenceGate:
                 refusal_reason="low_relevance",
                 confidence_adjustment=0.3,
                 details=details + [f"相关性过低 ({relevance_score:.2f} < {self.MEDIUM_RELEVANCE_THRESHOLD})"],
-            )
+            ), warning
 
         if hit_count < self.MIN_HITS_FOR_CONFIDENCE and relevance_score < self.HIGH_RELEVANCE_THRESHOLD:
             return EvidenceGateResult(
@@ -144,7 +160,7 @@ class EvidenceGate:
                 refusal_reason=None,
                 confidence_adjustment=0.6,
                 details=details + ["命中数量较少且相关性不高，建议降低置信度"],
-            )
+            ), warning
 
         # 5. 正常情况
         confidence_adjustment = min(1.0, relevance_score * (1 + min(hit_count / 6, 0.3)))
@@ -154,7 +170,7 @@ class EvidenceGate:
             refusal_reason=None,
             confidence_adjustment=confidence_adjustment,
             details=details,
-        )
+        ), warning
 
     def _compute_relevance(self, query: str, hits: list[Any]) -> float:
         """
