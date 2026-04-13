@@ -12,6 +12,7 @@ from typing import Any
 
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
+import jieba
 
 from .config import AppConfig
 
@@ -585,13 +586,19 @@ class BookIndexRepository:
             )
         return docs
 
+    def _tokenize_chinese(self, text: str) -> list[str]:
+        """中文分词，用于 TF-IDF。"""
+        return list(jieba.cut(text))
+
     def _build_vector_payload(self, docs: list[dict[str, Any]]) -> dict[str, Any]:
+        """构建词级 TF-IDF 向量。"""
         texts = [doc["text"] for doc in docs]
         if not texts:
-            return {"vectorizer": TfidfVectorizer(analyzer="char", ngram_range=(2, 3)), "matrix": None}
+            return {"vectorizer": None, "matrix": None}
+
+        # 词级 TF-IDF
         vectorizer = TfidfVectorizer(
-            analyzer="char",
-            ngram_range=(2, 3),
+            tokenizer=self._tokenize_chinese,
             lowercase=False,
             min_df=1,
             max_features=50000,
