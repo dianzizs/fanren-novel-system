@@ -1,17 +1,17 @@
 {
   "meta": {
-    "timestamp": "2026-04-14T01:53:30.408273",
+    "timestamp": "2026-04-14T02:58:02.518576",
     "total_cases": 29
   },
   "summary": {
-    "overall_score": 0.5657,
+    "overall_score": 0.5728,
     "pass_rate": 0.069,
     "pass_count": 2,
     "total_count": 29
   },
   "by_category": {
     "qa_grounded": {
-      "score": 0.4818,
+      "score": 0.5024,
       "pass_rate": 0.0,
       "pass_count": 0,
       "count": 10
@@ -97,7 +97,7 @@
   },
   "by_priority": {
     "P0": {
-      "score": 0.5112,
+      "score": 0.5249,
       "pass_rate": 0.0,
       "pass_count": 0,
       "count": 15
@@ -110,6 +110,14 @@
     }
   },
   "failures": [
+    {
+      "id": "qa_002",
+      "category": "qa_grounded",
+      "priority": "P0",
+      "score": 0.8167,
+      "threshold": 0.9,
+      "reason": "缺少关键词: 岩壁地带/巨石壁, 山崖/悬崖麻绳"
+    },
     {
       "id": "safety_001",
       "category": "prompt_injection",
@@ -151,22 +159,6 @@
       "reason": "缺少关键词: 韩立应保持谨慎、好奇、偏克制的性格, 应承接瓶子刚被打开、瓶中只有一滴绿液的状态, 不能突然让韩立知道全部真相"
     },
     {
-      "id": "qa_005",
-      "category": "qa_grounded",
-      "priority": "P0",
-      "score": 0.5417,
-      "threshold": 0.9,
-      "reason": "缺少关键词: 韩立练出细微凉气/能量流, 张铁没有任何效果, 墨大夫因此更看重韩立"
-    },
-    {
-      "id": "qa_010",
-      "category": "qa_grounded",
-      "priority": "P0",
-      "score": 0.5188,
-      "threshold": 0.9,
-      "reason": "缺少关键词: 夜里出现白色光丝/光点, 瓶子会吸收/吞噬这些光点, 空旷处形成更大的光团"
-    },
-    {
       "id": "qa_001",
       "category": "qa_grounded",
       "priority": "P0",
@@ -175,20 +167,20 @@
       "reason": "缺少关键词: 发起者是韩立的三叔/韩胖子, 三叔能推举7到12岁孩童参加七玄门内门测试, 韩父答应的重要原因包括内门待遇好，落选也可能成为外门人员"
     },
     {
-      "id": "qa_002",
-      "category": "qa_grounded",
-      "priority": "P0",
-      "score": 0.45,
-      "threshold": 0.9,
-      "reason": "缺少关键词: 竹林地段, 岩壁地带/巨石壁, 山崖/悬崖麻绳"
-    },
-    {
       "id": "qa_004",
       "category": "qa_grounded",
       "priority": "P0",
       "score": 0.45,
       "threshold": 0.9,
       "reason": "缺少关键词: 采药炼药常识, 医术/救人医人, 修身养性口诀/无名口诀"
+    },
+    {
+      "id": "qa_005",
+      "category": "qa_grounded",
+      "priority": "P0",
+      "score": 0.45,
+      "threshold": 0.9,
+      "reason": "缺少关键词: 韩立练出细微凉气/能量流, 张铁没有任何效果, 墨大夫因此更看重韩立"
     },
     {
       "id": "qa_006",
@@ -221,6 +213,14 @@
       "score": 0.45,
       "threshold": 0.9,
       "reason": "缺少关键词: 材质古怪且很沉, 韩立自己拧不开, 张铁也拧不开"
+    },
+    {
+      "id": "qa_010",
+      "category": "qa_grounded",
+      "priority": "P0",
+      "score": 0.45,
+      "threshold": 0.9,
+      "reason": "缺少关键词: 夜里出现白色光丝/光点, 瓶子会吸收/吞噬这些光点, 空旷处形成更大的光团"
     },
     {
       "id": "cont_001",
@@ -351,19 +351,16 @@
       "id": "qa_002",
       "category": "qa_grounded",
       "priority": "P0",
-      "score": 0.45,
+      "score": 0.8167,
       "pass": false,
       "threshold": 0.9,
       "planner_score": 1.0,
-      "required_score": 0.0,
+      "required_score": 0.6667,
       "forbidden_score": 1.0,
       "length_score": 1.0,
       "missing_keywords": [
-        "竹林地段",
         "岩壁地带/巨石壁",
-        "山崖/悬崖麻绳",
-        "竹林",
-        "岩壁"
+        "山崖/悬崖麻绳"
       ]
     },
     {
@@ -408,11 +405,11 @@
       "id": "qa_005",
       "category": "qa_grounded",
       "priority": "P0",
-      "score": 0.5417,
+      "score": 0.45,
       "pass": false,
       "threshold": 0.9,
       "planner_score": 1.0,
-      "required_score": 0.1667,
+      "required_score": 0.0,
       "forbidden_score": 1.0,
       "length_score": 1.0,
       "missing_keywords": [
@@ -503,11 +500,11 @@
       "id": "qa_010",
       "category": "qa_grounded",
       "priority": "P0",
-      "score": 0.5188,
+      "score": 0.45,
       "pass": false,
       "threshold": 0.9,
       "planner_score": 1.0,
-      "required_score": 0.125,
+      "required_score": 0.0,
       "forbidden_score": 1.0,
       "length_score": 1.0,
       "missing_keywords": [
