@@ -23,3 +23,4 @@ default-book.txt
 *.epub
 *.docx
 
+.worktrees/
