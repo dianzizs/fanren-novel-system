@@ -282,12 +282,16 @@ class RuleBasedPlanner:
         retrieval_targets = list(self.INTENT_TARGETS.get(intent, ["chapter_chunks"]))
         retrieval_intent = self._get_retrieval_intent(intent)
 
-        # 3. 人名关键词作为辅助增强（不覆盖意图决策）
+        # 3. 人名关键词：仅在多角色对比场景追加 character_card
         person_keywords = ("韩立", "张铁", "墨大夫", "舞岩", "韩胖子", "三叔")
-        if any(kw in query for kw in person_keywords) and intent != QueryIntent.CHARACTER_ANALYSIS:
-            # 因果/事实问题：补充 character_card 用于上下文，但不优先
-            if "character_card" not in retrieval_targets:
-                retrieval_targets.append("character_card")
+        matched_persons = [kw for kw in person_keywords if kw in query]
+        if matched_persons and intent != QueryIntent.CHARACTER_ANALYSIS:
+            # 对比型问题（"而"、"却"等对比连词 + 多角色）需要角色身份信息
+            contrastive_markers = ("而", "却", "但", "不同", "区别", "相比")
+            has_contrast = any(m in query for m in contrastive_markers)
+            if has_contrast and len(matched_persons) >= 2:
+                if "character_card" not in retrieval_targets:
+                    retrieval_targets.append("character_card")
 
         # 4. 其他辅助逻辑
         if any(keyword in query for keyword in ("瓶子", "后来", "现在")):
