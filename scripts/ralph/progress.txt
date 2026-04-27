@@ -10,3 +10,19 @@ Started: Mon Apr 28 10:00:00 2026
 - embedding/ contains LocalOpenVINOEmbeddingProvider and LocalCudaEmbeddingProvider
 
 ---
+
+## [Mon Apr 28 10:10:00 2026] - US-001
+- Added vector_stores field to LoadedBookIndex dataclass
+- Added TYPE_CHECKING import for BaseVectorStore type hint
+- Updated load() method to initialize vector_stores as empty dict
+- Files changed:
+  - novel_system/indexing.py (modified)
+  - scripts/ralph/prd.json (created)
+  - scripts/ralph/progress.txt (created)
+- **Learnings for future iterations:**
+  - Use TYPE_CHECKING for forward references to avoid circular imports
+  - BaseVectorStore is in novel_system/vector_store/base.py
+  - LoadedBookIndex is a dataclass, field order matters for initialization
+---
+
+---

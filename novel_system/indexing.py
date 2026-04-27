@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import pickle
 import re
 import shutil
@@ -8,16 +9,20 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING, Optional
 
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 import jieba
 
 from .config import AppConfig
+from .vector_store import FAISSVectorStore
 
 if TYPE_CHECKING:
+    from .embedding.base import EmbeddingProvider
     from .vector_store.base import BaseVectorStore
+
+logger = logging.getLogger(__name__)
 
 
 CHAPTER_RE = re.compile(r"^第\s*(\d+)\s*章\s+(.+)$", re.MULTILINE)
@@ -611,6 +616,52 @@ class BookIndexRepository:
         )
         matrix = vectorizer.fit_transform(texts)
         return {"vectorizer": vectorizer, "matrix": matrix}
+
+    def _build_faiss_index(
+        self,
+        docs: list[dict[str, Any]],
+        embedding_provider: "EmbeddingProvider",
+    ) -> Optional[FAISSVectorStore]:
+        """构建 FAISS 向量索引。
+
+        Args:
+            docs: 文档列表，每个文档需包含 'id' 和 'text' 字段
+            embedding_provider: Embedding Provider 实例
+
+        Returns:
+            FAISSVectorStore 实例，如果文档列表为空则返回 None
+        """
+        if not docs:
+            return None
+
+        # 提取 ID 和文本
+        ids = [doc.get("id", f"doc-{i}") for i, doc in enumerate(docs)]
+        texts = [doc.get("text", "") for doc in docs]
+
+        if not any(texts):
+            logger.warning("All documents have empty text, skipping FAISS index")
+            return None
+
+        # 计算 embeddings
+        try:
+            embeddings = embedding_provider.embed(texts)
+        except Exception as e:
+            logger.warning(f"Failed to compute embeddings: {e}")
+            return None
+
+        if not embeddings:
+            logger.warning("No embeddings generated, skipping FAISS index")
+            return None
+
+        # 获取向量维度
+        dimension = len(embeddings[0])
+
+        # 创建 FAISS 索引
+        vector_store = FAISSVectorStore(dimension=dimension, metric="ip")
+        vector_store.add(ids=ids, vectors=embeddings, documents=docs)
+
+        logger.info(f"Built FAISS index with {len(ids)} vectors, dimension={dimension}")
+        return vector_store
 
     def _build_vector_payload_for_corpus(self, book_id: str, corpus_name: str, docs: list[dict[str, Any]]) -> None:
         """为单个 corpus 构建并保存向量索引（独立调用）"""
