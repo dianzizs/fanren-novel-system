@@ -34,6 +34,7 @@ class SearchOrchestrator:
         targets: list[str],
         chapter_scope: list[int],
         top_k: int,
+        query_embedding: list[float] | None = None,
     ) -> list[Hit]:
         """Retrieve candidates from multiple targets.
 
@@ -43,6 +44,7 @@ class SearchOrchestrator:
             targets: List of target names to search.
             chapter_scope: Chapter range for filtering.
             top_k: Maximum results to return.
+            query_embedding: Optional query vector for dense search.
 
         Returns:
             List of Hit objects sorted by score.
@@ -58,6 +60,18 @@ class SearchOrchestrator:
             if target == "character_card":
                 alias_hits = self._exact_character_hits(query, docs)
                 hits.extend(alias_hits)
+
+            # 向量检索（如果提供了 query_embedding）
+            if query_embedding is not None:
+                vector_store = book_index.vector_stores.get(target)
+                if vector_store is not None:
+                    dense_hits = self._dense_search(
+                        query_vector=query_embedding,
+                        vector_store=vector_store,
+                        target=target,
+                        top_k=top_k,
+                    )
+                    hits.extend(dense_hits)
 
             # TF-IDF 检索
             vectorizer = book_index.vectorizers.get(target)
@@ -151,7 +165,7 @@ class SearchOrchestrator:
     def _dense_search(
         self,
         query_vector: list[float],
-        vector_store: "BaseVectorStore",
+        vector_store: "BaseVectorStore | None",
         target: str,
         top_k: int,
     ) -> list[dict[str, Any]]:
