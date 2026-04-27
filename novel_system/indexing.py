@@ -309,13 +309,40 @@ class BookIndexRepository:
                     payload = pickle.load(handle)
                 vectorizers[name] = payload["vectorizer"]
                 matrices[name] = payload["matrix"]
+
+        # 加载向量索引
+        vector_stores: dict[str, "BaseVectorStore"] = {}
+        vectors_dir = book_dir / "vectors"
+        if vectors_dir.exists() and vectors_dir.is_dir():
+            for corpus_dir in vectors_dir.iterdir():
+                if not corpus_dir.is_dir():
+                    continue
+                corpus_name = corpus_dir.name
+                try:
+                    # 从 metadata.json 读取维度信息
+                    metadata_path = corpus_dir / "metadata.json"
+                    if not metadata_path.exists():
+                        continue
+                    with metadata_path.open("r", encoding="utf-8") as f:
+                        metadata = json.load(f)
+                    dimension = metadata.get("dimension", 512)
+                    metric = metadata.get("metric", "ip")
+
+                    # 创建并加载 FAISS 索引
+                    vector_store = FAISSVectorStore(dimension=dimension, metric=metric)
+                    vector_store.load(str(corpus_dir))
+                    vector_stores[corpus_name] = vector_store
+                    logger.info(f"Loaded vector index for {corpus_name}")
+                except Exception as e:
+                    logger.warning(f"Failed to load vector index for {corpus_name}: {e}")
+
         loaded = LoadedBookIndex(
             manifest=manifest,
             chapters=chapters,
             corpora=corpora,
             vectorizers=vectorizers,
             matrices=matrices,
-            vector_stores={},
+            vector_stores=vector_stores,
         )
         self._cache[book_id] = loaded
         return loaded
