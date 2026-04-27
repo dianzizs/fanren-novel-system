@@ -11,6 +11,22 @@ Started: Tue Apr 28 02:16:36     2026
 
 ---
 
+## [Mon Apr 28 10:35:00 2026] - US-006
+- retrieve() 方法接收可选的 query_embedding 参数
+- 当 query_embedding 提供且 vector_store 存在时，调用 _dense_search()
+- TF-IDF 和向量搜索结果合并（相同文档取最高分）
+- 结果排序和去重逻辑保持不变（通过 _dedupe_candidates）
+- 无向量索引时降级到纯 TF-IDF
+- Files changed:
+  - novel_system/search/orchestrator.py (modified retrieve method)
+  - scripts/ralph/prd.json (updated US-006 passes)
+  - scripts/ralph/progress.txt (this update)
+- **Learnings for future iterations:**
+  - _dedupe_candidates 已经实现了相同文档取最高分的逻辑
+  - 向量搜索和 TF-IDF 搜索可以同时进行，结果自动合并
+  - query_embedding 参数是可选的，未提供时降级到纯 TF-IDF
+---
+
 ## [Mon Apr 28 10:30:00 2026] - US-005
 - 在 orchestrator.py 中添加 _dense_search() 方法
 - 方法接收 query_vector, vector_store, target, top_k 参数
