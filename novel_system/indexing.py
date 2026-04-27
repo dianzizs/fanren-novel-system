@@ -117,8 +117,13 @@ class LoadedBookIndex:
 
 
 class BookIndexRepository:
-    def __init__(self, config: AppConfig) -> None:
+    def __init__(
+        self,
+        config: AppConfig,
+        embedding_provider: Optional["EmbeddingProvider"] = None,
+    ) -> None:
         self.config = config
+        self._embedding_provider = embedding_provider
         self._cache: dict[str, LoadedBookIndex] = {}
 
     def list_books(self) -> list[dict[str, Any]]:
@@ -247,6 +252,23 @@ class BookIndexRepository:
             with (book_dir / f"{name}.pkl").open("wb") as handle:
                 pickle.dump(payload, handle)
 
+        # 构建并保存向量索引（如果提供了 embedding_provider）
+        has_vector_index = False
+        if self._embedding_provider is not None:
+            vectors_dir = book_dir / "vectors"
+            for name, docs in corpora.items():
+                if not docs:
+                    continue
+                try:
+                    vector_store = self._build_faiss_index(docs, self._embedding_provider)
+                    if vector_store is not None:
+                        corpus_vector_dir = vectors_dir / name
+                        vector_store.save(str(corpus_vector_dir))
+                        has_vector_index = True
+                        logger.info(f"Saved vector index for {name} to {corpus_vector_dir}")
+                except Exception as e:
+                    logger.warning(f"Failed to build vector index for {name}: {e}")
+
         manifest = {
             "id": book_id,
             "title": title,
@@ -255,6 +277,7 @@ class BookIndexRepository:
             "chunk_count": len(chunks),
             "indexed": True,
             "indexed_at": datetime.utcnow().isoformat(),
+            "has_vector_index": has_vector_index,
         }
         (book_dir / "manifest.json").write_text(
             json.dumps(manifest, ensure_ascii=False, indent=2),
