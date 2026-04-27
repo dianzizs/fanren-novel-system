@@ -112,7 +112,7 @@ class TraceLogger:
             "retrieval_hits_count": trace.retrieval.hits_count,
             "retrieval_duration_ms": trace.retrieval.duration_ms,
             "evidence_count": trace.evidence_count,
-            "uncertainty": trace.uncertainty,
+            "confidence": trace.confidence,
             "total_duration_ms": round(trace.total_duration_ms, 2),
         }
 
@@ -143,7 +143,7 @@ class TraceLogger:
             "retrieval_hits_count": trace.retrieval.hits_count,
             "retrieval_duration_ms": trace.retrieval.duration_ms,
             "evidence_count": trace.evidence_count,
-            "uncertainty": trace.uncertainty,
+            "confidence": trace.confidence,
             "validation_adjusted": trace.validation.adjusted,
             "validation_notes": trace.validation.notes,
             "total_duration_ms": round(trace.total_duration_ms, 2),

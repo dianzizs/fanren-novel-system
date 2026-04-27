@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from .profiles import TARGET_PROFILES
+
+if TYPE_CHECKING:
+    from ..vector_store.base import BaseVectorStore
 
 
 @dataclass
@@ -31,6 +34,7 @@ class SearchOrchestrator:
         targets: list[str],
         chapter_scope: list[int],
         top_k: int,
+        query_embedding: list[float] | None = None,
     ) -> list[Hit]:
         """Retrieve candidates from multiple targets.
 
@@ -40,6 +44,7 @@ class SearchOrchestrator:
             targets: List of target names to search.
             chapter_scope: Chapter range for filtering.
             top_k: Maximum results to return.
+            query_embedding: Optional query vector for dense search.
 
         Returns:
             List of Hit objects sorted by score.
@@ -50,10 +55,35 @@ class SearchOrchestrator:
             # Filter by chapter scope
             if chapter_scope:
                 docs = [doc for doc in docs if self._in_scope(doc, chapter_scope)]
+
+            # 特殊处理：character_card 精确别名匹配
             if target == "character_card":
                 alias_hits = self._exact_character_hits(query, docs)
                 hits.extend(alias_hits)
-            hits.extend(self._sparse_fallback(query, docs, target))
+
+            # 向量检索（如果提供了 query_embedding）
+            if query_embedding is not None:
+                vector_store = book_index.vector_stores.get(target)
+                if vector_store is not None:
+                    dense_hits = self._dense_search(
+                        query_vector=query_embedding,
+                        vector_store=vector_store,
+                        target=target,
+                        top_k=top_k,
+                    )
+                    hits.extend(dense_hits)
+
+            # TF-IDF 检索
+            vectorizer = book_index.vectorizers.get(target)
+            matrix = book_index.matrices.get(target)
+
+            if vectorizer is not None and matrix is not None:
+                tfidf_hits = self._tfidf_search(query, docs, vectorizer, matrix, target, top_k)
+                hits.extend(tfidf_hits)
+            else:
+                # 回退到字符级匹配
+                hits.extend(self._sparse_fallback(query, docs, target))
+
         deduped = self._dedupe_candidates(hits)
         deduped.sort(key=lambda item: item["score"], reverse=True)
         return [
@@ -90,6 +120,82 @@ class SearchOrchestrator:
                     "document": doc,
                     "score": 1.0,
                 })
+        return hits
+
+    def _tfidf_search(
+        self,
+        query: str,
+        docs: list[dict[str, Any]],
+        vectorizer: Any,
+        matrix: Any,
+        target: str,
+        top_k: int,
+    ) -> list[dict[str, Any]]:
+        """使用 TF-IDF 进行检索。
+
+        Args:
+            query: 查询文本
+            docs: 文档列表
+            vectorizer: TF-IDF vectorizer
+            matrix: TF-IDF 矩阵
+            target: 检索目标名称
+            top_k: 返回数量
+
+        Returns:
+            命中结果列表
+        """
+        if not docs or matrix is None:
+            return []
+
+        query_vec = vectorizer.transform([query])
+        scores = (matrix @ query_vec.T).toarray().ravel()
+        top_indices = scores.argsort()[-top_k:][::-1]
+
+        hits = []
+        for idx in top_indices:
+            if scores[idx] > 0 and idx < len(docs):
+                hits.append({
+                    "target": target,
+                    "document_id": docs[idx].get("id", f"doc-{idx}"),
+                    "document": docs[idx],
+                    "score": float(scores[idx]),
+                })
+        return hits
+
+    def _dense_search(
+        self,
+        query_vector: list[float],
+        vector_store: "BaseVectorStore | None",
+        target: str,
+        top_k: int,
+    ) -> list[dict[str, Any]]:
+        """使用向量搜索进行检索。
+
+        Args:
+            query_vector: 查询向量
+            vector_store: 向量存储实例
+            target: 检索目标名称
+            top_k: 返回数量
+
+        Returns:
+            命中结果列表
+        """
+        if vector_store is None:
+            return []
+
+        try:
+            results = vector_store.search(query_vector, top_k=top_k)
+        except Exception:
+            return []
+
+        hits = []
+        for result in results:
+            hits.append({
+                "target": target,
+                "document_id": result.id,
+                "document": result.document,
+                "score": result.score,
+            })
         return hits
 
     def _sparse_fallback(

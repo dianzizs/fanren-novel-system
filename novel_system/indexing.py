@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import pickle
 import re
 import shutil
@@ -8,12 +9,20 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING, Optional
 
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
+import jieba
 
 from .config import AppConfig
+from .vector_store import FAISSVectorStore
+
+if TYPE_CHECKING:
+    from .embedding.base import EmbeddingProvider
+    from .vector_store.base import BaseVectorStore
+
+logger = logging.getLogger(__name__)
 
 
 CHAPTER_RE = re.compile(r"^第\s*(\d+)\s*章\s+(.+)$", re.MULTILINE)
@@ -104,11 +113,17 @@ class LoadedBookIndex:
     corpora: dict[str, list[dict[str, Any]]]
     vectorizers: dict[str, TfidfVectorizer]
     matrices: dict[str, Any]
+    vector_stores: dict[str, "BaseVectorStore"]
 
 
 class BookIndexRepository:
-    def __init__(self, config: AppConfig) -> None:
+    def __init__(
+        self,
+        config: AppConfig,
+        embedding_provider: Optional["EmbeddingProvider"] = None,
+    ) -> None:
         self.config = config
+        self._embedding_provider = embedding_provider
         self._cache: dict[str, LoadedBookIndex] = {}
 
     def list_books(self) -> list[dict[str, Any]]:
@@ -237,6 +252,23 @@ class BookIndexRepository:
             with (book_dir / f"{name}.pkl").open("wb") as handle:
                 pickle.dump(payload, handle)
 
+        # 构建并保存向量索引（如果提供了 embedding_provider）
+        has_vector_index = False
+        if self._embedding_provider is not None:
+            vectors_dir = book_dir / "vectors"
+            for name, docs in corpora.items():
+                if not docs:
+                    continue
+                try:
+                    vector_store = self._build_faiss_index(docs, self._embedding_provider)
+                    if vector_store is not None:
+                        corpus_vector_dir = vectors_dir / name
+                        vector_store.save(str(corpus_vector_dir))
+                        has_vector_index = True
+                        logger.info(f"Saved vector index for {name} to {corpus_vector_dir}")
+                except Exception as e:
+                    logger.warning(f"Failed to build vector index for {name}: {e}")
+
         manifest = {
             "id": book_id,
             "title": title,
@@ -245,6 +277,7 @@ class BookIndexRepository:
             "chunk_count": len(chunks),
             "indexed": True,
             "indexed_at": datetime.utcnow().isoformat(),
+            "has_vector_index": has_vector_index,
         }
         (book_dir / "manifest.json").write_text(
             json.dumps(manifest, ensure_ascii=False, indent=2),
@@ -276,12 +309,40 @@ class BookIndexRepository:
                     payload = pickle.load(handle)
                 vectorizers[name] = payload["vectorizer"]
                 matrices[name] = payload["matrix"]
+
+        # 加载向量索引
+        vector_stores: dict[str, "BaseVectorStore"] = {}
+        vectors_dir = book_dir / "vectors"
+        if vectors_dir.exists() and vectors_dir.is_dir():
+            for corpus_dir in vectors_dir.iterdir():
+                if not corpus_dir.is_dir():
+                    continue
+                corpus_name = corpus_dir.name
+                try:
+                    # 从 metadata.json 读取维度信息
+                    metadata_path = corpus_dir / "metadata.json"
+                    if not metadata_path.exists():
+                        continue
+                    with metadata_path.open("r", encoding="utf-8") as f:
+                        metadata = json.load(f)
+                    dimension = metadata.get("dimension", 512)
+                    metric = metadata.get("metric", "ip")
+
+                    # 创建并加载 FAISS 索引
+                    vector_store = FAISSVectorStore(dimension=dimension, metric=metric)
+                    vector_store.load(str(corpus_dir))
+                    vector_stores[corpus_name] = vector_store
+                    logger.info(f"Loaded vector index for {corpus_name}")
+                except Exception as e:
+                    logger.warning(f"Failed to load vector index for {corpus_name}: {e}")
+
         loaded = LoadedBookIndex(
             manifest=manifest,
             chapters=chapters,
             corpora=corpora,
             vectorizers=vectorizers,
             matrices=matrices,
+            vector_stores=vector_stores,
         )
         self._cache[book_id] = loaded
         return loaded
@@ -585,13 +646,19 @@ class BookIndexRepository:
             )
         return docs
 
+    def _tokenize_chinese(self, text: str) -> list[str]:
+        """中文分词，用于 TF-IDF。"""
+        return list(jieba.cut(text))
+
     def _build_vector_payload(self, docs: list[dict[str, Any]]) -> dict[str, Any]:
+        """构建词级 TF-IDF 向量。"""
         texts = [doc["text"] for doc in docs]
         if not texts:
-            return {"vectorizer": TfidfVectorizer(analyzer="char", ngram_range=(2, 3)), "matrix": None}
+            return {"vectorizer": None, "matrix": None}
+
+        # 词级 TF-IDF
         vectorizer = TfidfVectorizer(
-            analyzer="char",
-            ngram_range=(2, 3),
+            tokenizer=self._tokenize_chinese,
             lowercase=False,
             min_df=1,
             max_features=50000,
@@ -599,6 +666,52 @@ class BookIndexRepository:
         )
         matrix = vectorizer.fit_transform(texts)
         return {"vectorizer": vectorizer, "matrix": matrix}
+
+    def _build_faiss_index(
+        self,
+        docs: list[dict[str, Any]],
+        embedding_provider: "EmbeddingProvider",
+    ) -> Optional[FAISSVectorStore]:
+        """构建 FAISS 向量索引。
+
+        Args:
+            docs: 文档列表，每个文档需包含 'id' 和 'text' 字段
+            embedding_provider: Embedding Provider 实例
+
+        Returns:
+            FAISSVectorStore 实例，如果文档列表为空则返回 None
+        """
+        if not docs:
+            return None
+
+        # 提取 ID 和文本
+        ids = [doc.get("id", f"doc-{i}") for i, doc in enumerate(docs)]
+        texts = [doc.get("text", "") for doc in docs]
+
+        if not any(texts):
+            logger.warning("All documents have empty text, skipping FAISS index")
+            return None
+
+        # 计算 embeddings
+        try:
+            embeddings = embedding_provider.embed(texts)
+        except Exception as e:
+            logger.warning(f"Failed to compute embeddings: {e}")
+            return None
+
+        if not embeddings:
+            logger.warning("No embeddings generated, skipping FAISS index")
+            return None
+
+        # 获取向量维度
+        dimension = len(embeddings[0])
+
+        # 创建 FAISS 索引
+        vector_store = FAISSVectorStore(dimension=dimension, metric="ip")
+        vector_store.add(ids=ids, vectors=embeddings, documents=docs)
+
+        logger.info(f"Built FAISS index with {len(ids)} vectors, dimension={dimension}")
+        return vector_store
 
     def _build_vector_payload_for_corpus(self, book_id: str, corpus_name: str, docs: list[dict[str, Any]]) -> None:
         """为单个 corpus 构建并保存向量索引（独立调用）"""

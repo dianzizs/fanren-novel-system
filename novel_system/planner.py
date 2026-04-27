@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from .models import ConversationTurn, PlannerOutput, Scope
+from .models import ConversationTurn, PlannerOutput, QueryIntent, Scope
 
 
 @dataclass
@@ -27,7 +27,6 @@ class MemoryState:
 SHORT_PREFERENCE_RE = re.compile(r"(简短|短一点|精简|别太长)")
 EVIDENCE_PREFERENCE_RE = re.compile(r"(带证据|给证据|附证据|附引用|带引用)")
 NO_SPOILER_RE = re.compile(r"(不剧透|不要剧透|只看前\d+章|只基于前\d+章)")
-FUTURE_RE = re.compile(r"(以后|后面|最终|最后|到底有什么用|秘密被完全揭开)")
 
 
 # ── 查询重写 ──────────────────────────────────────────────
@@ -136,6 +135,57 @@ class QueryRewriter:
 
 
 class RuleBasedPlanner:
+    """基于规则的查询规划器。"""
+
+    # 意图关键词模式（按优先级排序：更具体的意图先检查）
+    INTENT_PATTERNS: dict[QueryIntent, list[str]] = {
+        QueryIntent.SUMMARY: ["总结", "概括", "摘要", "简介"],
+        QueryIntent.TEMPORAL: ["什么时候", "后来", "之后", "之前", "最终", "结局"],
+        QueryIntent.CHARACTER_ANALYSIS: ["是谁", "性格", "外貌", "什么样的人", "人物卡"],
+        QueryIntent.CAUSAL_CHAIN: ["为什么", "怎么", "原因", "结果", "怎么会", "怎么会这样"],
+        QueryIntent.FACT_QUERY: ["是什么", "有哪些", "有没有", "是怎样的"],
+    }
+
+    # 意图到检索目标的映射
+    INTENT_TARGETS: dict[QueryIntent, list[str]] = {
+        QueryIntent.CAUSAL_CHAIN: ["event_timeline", "chapter_chunks"],
+        QueryIntent.FACT_QUERY: ["chapter_chunks", "canon_memory"],
+        QueryIntent.CHARACTER_ANALYSIS: ["character_card", "chapter_chunks"],
+        QueryIntent.SUMMARY: ["chapter_summaries", "event_timeline"],
+        QueryIntent.TEMPORAL: ["event_timeline", "recent_plot"],
+        QueryIntent.GENERAL: ["chapter_chunks"],
+    }
+
+    def _detect_intent(self, query: str) -> QueryIntent:
+        """检测查询意图（优先级最高）。
+
+        Args:
+            query: 用户查询
+
+        Returns:
+            检测到的意图类型
+        """
+        for intent, keywords in self.INTENT_PATTERNS.items():
+            if any(kw in query for kw in keywords):
+                return intent
+        return QueryIntent.GENERAL
+
+    def _get_retrieval_intent(self, intent: QueryIntent) -> str:
+        """根据意图返回检索意图。"""
+        mapping = {
+            QueryIntent.CAUSAL_CHAIN: "causal_chain",
+            QueryIntent.CHARACTER_ANALYSIS: "alias_resolution",
+        }
+        return mapping.get(intent, "scene_evidence")
+
+    def _get_task_type(self, intent: QueryIntent, query: str) -> str:
+        """根据意图返回任务类型。"""
+        if intent == QueryIntent.SUMMARY:
+            return "summary"
+        if intent == QueryIntent.CHARACTER_ANALYSIS:
+            return "analysis"
+        return "qa"
+
     def infer_memory(self, history: list[ConversationTurn], scope: Scope) -> MemoryState:
         state = MemoryState()
         for turn in history:
@@ -223,31 +273,36 @@ class RuleBasedPlanner:
             )
             return planner, memory
 
-        if FUTURE_RE.search(query):
-            planner = PlannerOutput(
-                task_type="qa",
-                retrieval_needed=True,
-                retrieval_targets=["recent_plot", "canon_memory", "chapter_chunks"],
-                retrieval_intent="causal_chain",
-                constraints=["grounded_answer", "cite_evidence", "no_spoiler_beyond_scope"],
-                success_criteria=["answer_correct", "scope_guard"],
-            )
-            return planner, memory
+        # === 意图优先路由（核心逻辑）===
 
-        retrieval_targets = ["chapter_chunks"]
-        retrieval_intent = "scene_evidence"
-        if any(keyword in query for keyword in ("为什么", "结果", "怎么", "原因")):
-            retrieval_targets = ["event_timeline", "chapter_chunks"]
-            retrieval_intent = "causal_chain"
-        if any(keyword in query for keyword in ("人物", "谁", "关系", "韩立", "张铁", "墨大夫", "舞岩", "韩胖子", "三叔")):
-            retrieval_targets = ["character_card", *retrieval_targets]
-            retrieval_intent = "alias_resolution"
+        # 1. 检测意图（优先级最高）
+        intent = self._detect_intent(query)
+
+        # 2. 根据意图确定基础检索目标
+        retrieval_targets = list(self.INTENT_TARGETS.get(intent, ["chapter_chunks"]))
+        retrieval_intent = self._get_retrieval_intent(intent)
+
+        # 3. 人名关键词：仅在多角色对比场景追加 character_card
+        person_keywords = ("韩立", "张铁", "墨大夫", "舞岩", "韩胖子", "三叔")
+        matched_persons = [kw for kw in person_keywords if kw in query]
+        if matched_persons and intent != QueryIntent.CHARACTER_ANALYSIS:
+            # 对比型问题（"而"、"却"等对比连词 + 多角色）需要角色身份信息
+            contrastive_markers = ("而", "却", "但", "不同", "区别", "相比")
+            has_contrast = any(m in query for m in contrastive_markers)
+            if has_contrast and len(matched_persons) >= 2:
+                if "character_card" not in retrieval_targets:
+                    retrieval_targets.append("character_card")
+
+        # 4. 其他辅助逻辑
         if any(keyword in query for keyword in ("瓶子", "后来", "现在")):
-            retrieval_targets = ["recent_plot", *retrieval_targets]
+            if "recent_plot" not in retrieval_targets:
+                retrieval_targets.append("recent_plot")
+
         if multimodal:
             retrieval_targets = ["vision_parse", *retrieval_targets]
+
         planner = PlannerOutput(
-            task_type="qa",
+            task_type=self._get_task_type(intent, query),
             retrieval_needed=True,
             retrieval_targets=list(dict.fromkeys(retrieval_targets)),
             retrieval_intent=retrieval_intent,

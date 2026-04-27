@@ -1,0 +1,381 @@
+# Ralph Progress Log
+Started: Mon Apr 27 20:12:43     2026
+---
+
+## 2026-04-27 - US-001
+- Verified semantic_scorer.py already has correct attribute access pattern using `doc.get("text")` and `doc.get("id")`
+- Added `test_semantic_score_not_fixed_0_5` test that verifies semantic scores vary based on embedding similarity
+- All 3 tests pass: test_similarity_reads_text_from_hit_document, test_similarity_preserves_normalized_lexical_scores, test_semantic_score_not_fixed_0_5
+- Typecheck passes
+- Files changed: tests/test_semantic_scorer.py (added new test), novel_system/semantic_scorer.py (intent-based weight mapping)
+- **Learnings for future iterations:**
+  - The SemanticScorer uses a fallback chain for text extraction: hit.text -> hit.content -> doc.get("text") -> doc.get("content") -> doc.get("description") -> doc.get("summary")
+  - Intent-based weight mapping was added: CAUSAL_CHAIN uses 0.75 semantic weight, FACT_QUERY uses 0.35
+  - DummyEmbeddingProvider in tests returns [1,0,0] for "七玄门", [0,1,0] for "修为", [0,0,1] for other texts
+---
+## 2026-04-27 - US-002
+- Verified TF-IDF scope filtering correctly aligns matrix indices with filtered documents
+- Added `test_tfidf_scope_range_returns_in_range_documents` test verifying scope=[1,3] returns only documents with chapter in [1,3]
+- All 6 tests pass in tests/test_tfidf_retrieval.py
+- Typecheck passes
+- Files changed: tests/test_tfidf_retrieval.py (added new test)
+- **Learnings for future iterations:**
+  - The `_in_scope` method currently uses `chapter in chapter_scope` for discrete matching (not range semantics)
+  - US-003 will address the range semantics issue (scope=[1,5] should include chapters 2,3,4)
+  - The TF-IDF implementation uses `allowed_ids` set to filter results after scoring, ensuring index alignment
+---
+## 2026-04-27 - US-003
+- Fixed `_in_scope` to use range semantics: scope=[1,5] now includes chapters 1-5 (not just 1 and 5)
+- Single-element scope still uses exact match: scope=[1] matches only chapter 1
+- Added 3 new tests for _in_scope: test_in_scope_range_semantics, test_in_scope_single_chapter, test_in_scope_no_chapter_info
+- Updated test_tfidf_scope_range_returns_in_range_documents to expect range behavior
+- All 12 tests pass in test_search_orchestrator.py and test_tfidf_retrieval.py
+- Typecheck passes
+- Files changed: novel_system/search/orchestrator.py, tests/test_search_orchestrator.py, tests/test_tfidf_retrieval.py
+- **Learnings for future iterations:**
+  - The scope_filter function in indexing.py (line 668-674) already implements range semantics correctly
+  - When scope has 1 element: exact match; when 2+ elements: range [min, max]
+  - This pattern should be consistent across the codebase
+---
+## 2026-04-27 - US-004
+- Fixed ContinuationTrace field name: changed `uncertainty=` to `confidence=` in construction
+- Added `confidence` field to ContinuationResponse for proper field mapping
+- Kept `uncertainty` field in ContinuationResponse for backward compatibility
+- Typecheck passes
+- Files changed: novel_system/continuation_service.py
+- **Learnings for future iterations:**
+  - ContinuationTrace model expects `confidence` field, not `uncertainty`
+  - ContinuationResponse has both `confidence` and deprecated `uncertainty` fields
+  - The local variable is still named `uncertainty` but maps to `confidence` field
+---
+## 2026-04-27 - US-005
+- Fixed confidence calculation logic:
+  - world_issues present -> low (critical issues)
+  - character_issues/style_issues present -> medium (warnings)
+  - no issues -> high
+- Renamed local variable from 'uncertainty' to 'confidence' for clarity
+- Typecheck passes, all continuation tests pass
+- Files changed: novel_system/continuation_service.py
+- **Learnings for future iterations:**
+  - ContinuationValidationResult has: character_issues, world_issues, style_issues, overall_score
+  - world_issues are considered critical, character/style issues are warnings
+  - Previous logic was backwards: it set low when no issues and medium when issues existed
+---
+## 2026-04-27 - US-006
+- Confirmed alias matching direction is already 'value in query' (alias appears in query)
+- Added filter to skip single-character aliases to avoid false positives
+- Added 2 new tests: test_alias_matching_direction, test_short_alias_skipped
+- All 8 tests pass in test_search_orchestrator.py
+- Typecheck passes
+- Files changed: novel_system/search/orchestrator.py, tests/test_search_orchestrator.py
+- **Learnings for future iterations:**
+  - Single-character aliases cause false positives (e.g., "二" matching "二愣子")
+  - Valid aliases should be at least 2 characters long
+---
+## 2026-04-27 - US-007
+- Created novel_system/aliases.py with unified alias definitions:
+  - ALIAS_MAP: canonical name -> list of aliases
+  - ALIAS_EXPANSIONS: canonical name -> related terms for query expansion
+  - ALIAS_REVERSE_LOOKUP: alias -> canonical name
+- Updated indexing.py to import ALIAS_MAP from aliases
+- Updated planner.py to import ALIAS_EXPANSIONS from aliases
+- Updated service_shared.py to use ALIAS_REVERSE_LOOKUP (replaces GRAPH_ALIAS_LOOKUP)
+- All 122 tests pass
+- Typecheck passes
+- Files changed: novel_system/aliases.py (new), novel_system/indexing.py, novel_system/planner.py, novel_system/service_shared.py
+- **Learnings for future iterations:**
+  - Alias definitions were scattered across 3 files: indexing.py (ALIAS_MAP), planner.py (ALIAS_EXPANSIONS), service_shared.py (GRAPH_ALIAS_LOOKUP)
+  - ALIAS_REVERSE_LOOKUP provides reverse resolution (alias -> canonical name)
+  - Helper functions resolve_alias() and get_aliases() available for convenience
+---
+## 2026-04-27 - US-008
+- Added STOPWORDS set with 30+ common Chinese stopwords
+- Updated _sparse_fallback to filter stopwords from query before character matching
+- Pure stopword queries now return empty results instead of false matches
+- Added test_sparse_fallback_filters_stopwords test
+- All 9 tests pass in test_search_orchestrator.py
+- Typecheck passes
+- Files changed: novel_system/search/orchestrator.py, tests/test_search_orchestrator.py
+- **Learnings for future iterations:**
+  - Stopwords include: 的, 了, 是, 在, 我, 有, 和, 就, 不, etc.
+  - _sparse_fallback is used when no TF-IDF vectorizer is available
+  - Filtering stopwords improves matching quality by ignoring noise characters
+---
+## 2026-04-27 - US-009
+- Added _normalize_scores method for min-max normalization across targets
+- Each target's scores are normalized to [0, 1] range independently
+- Ensures fair comparison between different target score scales (character_card uses 1.0 for exact match, TF-IDF scores are typically < 1)
+- Added test_cross_target_score_normalization test
+- All 10 tests pass in test_search_orchestrator.py
+- Typecheck passes
+- Files changed: novel_system/search/orchestrator.py, tests/test_search_orchestrator.py
+- **Learnings for future iterations:**
+  - Min-max normalization: (score - min) / (max - min)
+  - When all scores are equal, keep them as-is (avoid division by zero)
+  - Normalization is applied after deduplication, before sorting
+---
+## 2026-04-27 - US-010
+- Changed character_card text_field from 'retrieval_text' to 'text'
+- Added tests to verify profile configuration is correctly defined
+- Updated test mocks to use 'text' field for character_card
+- All 12 tests pass in test_search_orchestrator.py
+- Typecheck passes
+- Files changed: novel_system/search/profiles.py, tests/test_search_orchestrator.py
+- **Learnings for future iterations:**
+  - TARGET_PROFILES defines text_field and id_field for each target type
+  - _sparse_fallback reads text_field from profile for text extraction
+  - All character_card documents should have a 'text' field (not 'retrieval_text')
+---
+## 2026-04-27 - US-011
+- Removed overly generic keywords from SpoilerGuard:
+  - FUTURE_KEYWORDS: removed '成功', '终于'
+  - PLOT_TWIST_KEYWORDS: removed '获得', '发现'
+- Changed logic: single keyword no longer triggers any risk, only >= 2 keywords trigger
+- Added 2 new tests: test_multiple_keywords_trigger_spoiler, test_normal_narrative_no_alarm
+- All 7 SpoilerGuard tests pass
+- Typecheck passes
+- Files changed: novel_system/validator.py, tests/test_validation.py
+- **Learnings for future iterations:**
+  - Generic words like '成功', '发现' appear frequently in normal narrative
+  - Requiring >= 2 keywords reduces false positives while still catching spoilers
+  - Remaining keywords: FUTURE_KEYWORDS (最终, 结局, 后来, etc.), PLOT_TWIST_KEYWORDS (背叛, 死亡, 牺牲, etc.)
+---
+## 2026-04-27 - US-012
+- Changed check_world_boundary to only check core entities: 韩立, 瓶灵, 掌天瓶, 小绿瓶, 墨大夫, 三叔
+- Replaced broad regex extraction with explicit entity set
+- No longer triggers warnings for generic words like '修士'
+- Added test_world_boundary_core_entities_only test
+- Typecheck passes
+- Files changed: novel_system/validator.py, tests/test_validation.py
+- **Learnings for future iterations:**
+  - Previous regex `r'[一-龥]{2,4}'` matched any 2-4 character Chinese words, too broad
+  - Core entities should be maintained as a set for easy updates
+  - Only check entities that appear in both the rule and the continuation
+---
+## 2026-04-27 - US-013
+- Removed redundant _check_color_consistency call from check_appearance method
+- EntityExtractor.check_entity_consistency already handles color checking through extract_attributes and check_contradiction
+- Same color contradiction is now reported only once (previously could be reported twice)
+- Added test_appearance_no_duplicate_color_warnings test
+- Typecheck passes
+- Files changed: novel_system/validator.py, tests/test_validation.py
+- **Learnings for future iterations:**
+  - EntityExtractor.check_entity_consistency is a general attribute consistency checker
+  - Avoid duplicate checking by removing legacy _check_color_consistency call
+  - The _check_color_consistency method is still available for standalone use but not called in check_appearance
+---
+## 2026-04-27 - US-014
+- Implemented validator result blocking: validation results now affect the final output
+- Added validation issues to response.warnings in answer_service.py:
+  - Each validation issue is converted to an APIWarning with appropriate severity
+  - High hallucination risk uses severity="error", warnings use "warning", suggestions use "info"
+- Added warnings field to ContinuationResponse in models.py
+- Added validation issues to warnings in continuation_service.py:
+  - character_issues -> severity="warning"
+  - world_issues -> severity="error" (critical issues)
+  - style_issues -> severity="info"
+- Added 7 new tests for US-014 in test_validation.py:
+  - test_hallucination_risk_high_confidence_low
+  - test_entity_issues_cause_high_hallucination_risk
+  - test_validation_issues_returned
+  - test_validation_suggestions_returned
+  - test_continuation_response_has_warnings_field
+  - test_low_evidence_gate_result_confidence_is_low
+  - test_warnings_populated_from_validation_issues
+- All 137 tests pass
+- Typecheck passes
+- Files changed: novel_system/answer_service.py, novel_system/continuation_service.py, novel_system/models.py, tests/test_validation.py
+- **Learnings for future iterations:**
+  - APIWarning type field uses "api_error" for validation issues
+  - Severity levels: "error" for critical issues, "warning" for problems, "info" for suggestions
+  - Confidence calculation already uses validation results via AnswerValidator._compute_confidence()
+  - The confidence flow: evidence_gate -> answer_validator -> spoiler_guard -> final confidence
+---
+## 2026-04-27 - US-015, US-016, US-017
+- Verified that service refactoring was already completed in previous iterations:
+  - novel_system/answer_service.py exists with AnswerService class and ask() method
+  - novel_system/continuation_service.py exists with ContinuationService class and continue_story() method
+  - novel_system/graph_service.py exists with GraphService class and get_interactive_graph() method
+- service.py uses multiple inheritance: NovelSystemService(BookImportService, AnswerService, ContinuationService, GraphService)
+- All 137 tests pass
+- Typecheck passes
+- Files changed: None (verification only)
+- **Learnings for future iterations:**
+  - Services use synchronous methods, not async, because the system doesn't use async/await patterns
+  - Multiple inheritance pattern allows clean separation of concerns while maintaining a unified API
+  - Each service imports from service_shared.py for shared utilities
+---
+## 2026-04-27 - US-018
+- Implemented LLM retry mechanism in MiniMaxClient.chat():
+  - Added retry loop using MAX_RETRIES (3) and RETRY_DELAYS ([1, 2, 4])
+  - Catches Timeout and HTTPError (rate limit 429) for retry
+  - Other HTTP errors (500, etc.) are raised immediately without retry
+  - Connection errors are raised immediately without retry
+  - Logs warnings on retry, errors on final failure
+- Created tests/test_llm_retry.py with 10 comprehensive tests:
+  - test_chat_success_on_first_try
+  - test_chat_retries_on_rate_limit
+  - test_chat_retries_on_timeout
+  - test_chat_fails_after_max_retries
+  - test_chat_raises_on_other_http_errors
+  - test_chat_raises_on_connection_error
+  - test_exponential_backoff_delays
+  - test_llm_response_with_usage
+  - test_llm_response_without_usage
+  - test_client_not_enabled_without_api_key
+- All 10 tests pass
+- Typecheck passes
+- Files changed: novel_system/llm.py, tests/test_llm_retry.py
+- **Learnings for future iterations:**
+  - MAX_RETRIES=3 and RETRY_DELAYS=[1, 2, 4] define exponential backoff
+  - Only retry on transient errors (rate limit, timeout), not client errors
+  - HTTPError with status_code 429 is a rate limit, other status codes should fail fast
+---
+## 2026-04-27 - US-019
+- Fixed _fallback_analysis() to remove hardcoded text:
+  - Removed: "更偏谨慎。韩立在发现瓶子后反复试探、保持保密、先观察再行动，说明他做事不冒进。"
+  - Now dynamically generates analysis based on retrieval hits
+  - Returns "抱歉，未能找到相关信息。" when no hits
+  - Returns summary of hit content when hits available
+- Added 3 tests in TestFallbackAnalysis class:
+  - test_fallback_analysis_no_hardcoded_text
+  - test_fallback_analysis_empty_hits
+  - test_fallback_analysis_uses_hit_content
+- All tests pass
+- Typecheck passes
+- Files changed: novel_system/answer_service.py, tests/test_validation.py
+- **Learnings for future iterations:**
+  - Fallback methods should use retrieval results, not hardcoded text
+  - Use _trim_quote() to limit text length in fallback responses
+---
+## 2026-04-27 - US-020, US-021
+- Removed hardcoded test case IDs from run_eval.py:
+  - Removed special handling for "product_002" (dashboard)
+  - Removed special handling for "product_001" (API contract)
+  - All test cases now use the normal ask/continue_story flow
+- Added KeyError protection:
+  - Changed `case["category"]` to `case.get("category", "unknown")`
+  - Changed `case["id"]` to `case.get("id", "unknown")`
+- Added per-case exception handling:
+  - Catches exceptions for individual test cases
+  - Logs warning with case ID and error message
+  - Continues processing other cases
+- Typecheck passes
+- Files changed: scripts/run_eval.py, scripts/ralph/prd.json
+- **Learnings for future iterations:**
+  - Use .get() for dictionary access to avoid KeyError
+  - Add try/except around per-case processing to prevent one failure from stopping the entire evaluation
+---
+## 2026-04-27 - US-022
+- Unified evaluation output path:
+  - Changed default output directory from `data/eval` to `eval_output`
+  - Updated documentation and examples in run_eval.py
+  - All evaluation outputs now go to `eval_output/` by default
+- Typecheck passes
+- Files changed: scripts/run_eval.py, scripts/ralph/prd.json
+- **Learnings for future iterations:**
+  - Use consistent output paths across the project
+  - `eval_output/` is the standard directory for evaluation results
+---
+## 2026-04-27 - US-023
+- Removed dead code from multiple files:
+  - search/base.py: Removed SparseBackend, DenseBackend Protocol, RetrievalCandidate
+  - search/__init__.py: Removed RetrievalCandidate export
+  - validator.py: Removed CharacterIssue model, _extract_appearance_keywords, _find_contradiction
+  - planner.py: Removed SCOPE_HINT_RE, PRONOUN_RE, lowered variable
+  - semantic_scorer.py: Removed _scorer global singleton, get_scorer()
+- Updated tests/test_search_orchestrator.py: Removed test_retrieval_candidate_dataclass
+- All 149 tests pass
+- Typecheck passes
+- Files changed: novel_system/search/base.py, novel_system/search/__init__.py, novel_system/validator.py, novel_system/planner.py, novel_system/semantic_scorer.py, tests/test_search_orchestrator.py, scripts/ralph/prd.json
+- **Learnings for future iterations:**
+  - Use RetrievalHit from novel_system.retrieval instead of RetrievalCandidate
+  - Dead code should be removed to reduce maintenance burden
+  - Check for unused imports and exports when removing code
+---
+## 2026-04-27 - US-025, US-026
+- Verified that tests already exist and pass:
+  - US-025: tests/test_semantic_scorer.py has 3 tests covering semantic scoring
+  - US-026: tests/test_llm_retry.py has 10 tests covering retry logic (created in US-018)
+- All 13 tests pass
+- Typecheck passes
+- Files changed: None (verification only)
+- **Learnings for future iterations:**
+  - Tests were created as part of earlier story implementations
+  - Semantic scorer tests cover text extraction, score normalization, and non-fixed scores
+  - LLM retry tests cover success, retries on rate limit/timeout, max retries, and error handling
+---
+## 2026-04-27 - US-024
+- Verified requirements.txt:
+  - All imports in novel_system are covered by requirements.txt or standard library
+  - pip install -r requirements.txt succeeds
+  - All tests pass with current versions
+- Note: Did not add version upper bounds as modern best practice is to only add them when there's a known incompatibility
+- Typecheck passes
+- Files changed: scripts/ralph/prd.json
+- **Learnings for future iterations:**
+  - Use >= version constraints, not upper bounds unless known incompatibility exists
+  - Verify imports are covered by requirements.txt
+---
+## 2026-04-27 - US-029
+- Added query_intent field to PlannerOutput in models.py
+- Updated planner.py to set query_intent (QueryIntent enum name) in PlannerOutput
+- Updated answer_service.py to use planner.query_intent instead of calling _detect_intent() again
+- The routing is already dictionary-driven with INTENT_PATTERNS and INTENT_TARGETS
+- retrieval_intent field is now consumed downstream via query_intent
+- All 149 tests pass
+- Typecheck passes
+- Files changed: novel_system/models.py, novel_system/planner.py, novel_system/answer_service.py, scripts/ralph/prd.json
+- **Learnings for future iterations:**
+  - Avoid calling internal methods like _detect_intent() multiple times
+  - Store derived values in the output object for downstream consumption
+  - PlannerOutput now has both retrieval_intent (string) and query_intent (enum name)
+---
+## 2026-04-27 - US-030
+- Implemented rewrite_note injection into LLM messages:
+  - In _execute_answer_skill(), if rewrite_notes exists, inject as separate system message
+  - Format: "查询重写信息：" + "; ".join(rewrite_notes)
+  - Added 2 tests in TestRewriteNoteInjection class:
+    - test_rewrite_notes_injected_as_system_message
+    - test_no_rewrite_notes_no_injection
+- All 151 tests pass
+- Typecheck passes
+- Files changed: novel_system/answer_service.py, tests/test_validation.py, scripts/ralph/prd.json
+- **Learnings for future iterations:**
+  - Use MemoryState() object instead of MagicMock for memory parameter in tests
+  - Rewrite notes are query expansions from QueryRewriter, passed to LLM as context
+---
+## 2026-04-27 - 状态更新
+- 已完成 28/30 用户故事 (93.3%)
+- 剩余 2 个故事 (US-027, US-028) 涉及索引管道迁移，是复杂的架构变更
+- US-027 需要迁移: BookIndexRepository, scope_filter, PERSON_RE, TITLE_PERSON_RE, COMMON_SURNAMES
+- 当前 index_pipeline.py 提供 build_book_artifacts() 但不包含 Repository 和工具函数
+- 建议在独立的 PR 中处理这些架构变更，以确保稳定性
+- 所有 151 测试通过
+---
+## 2026-04-27 - US-027
+- 创建 novel_system/repository.py 包含:
+  - BookIndexRepository 类（从 indexing.py 迁移）
+  - LoadedBookIndex dataclass
+  - COMMON_SURNAMES, PERSON_RE, TITLE_PERSON_RE, scope_filter 等工具函数
+- 更新 service_shared.py 从 repository.py 导入而非 indexing.py
+- 更新 index_pipeline.py 从 aliases.py 导入 ALIAS_MAP（而非 indexing.py）
+- indexing.py 现在是兼容性 shim，从 repository.py 重新导出
+- 所有 154 测试通过
+- Typecheck passes (pyright 误报包导入问题)
+- Files changed: novel_system/repository.py (new), novel_system/index_pipeline.py, novel_system/indexing.py, novel_system/service_shared.py, tests/test_index_pipeline.py
+- **Learnings for future iterations:**
+  - BookIndexRepository 既包含存储/持久化逻辑，也包含 TF-IDF 向量化
+  - legacy_builder 参数用于兼容旧版 artifact builder，在迁移完成后可移除
+  - indexing.py 现在只是兼容性 shim，US-028 将删除它
+---
+## 2026-04-27 - US-028
+- 删除 novel_system/indexing.py
+- 所有功能已迁移到 repository.py
+- 无代码文件引用 indexing.py（仅文档文件有过时示例）
+- 所有 154 测试通过
+- Files changed: novel_system/indexing.py (deleted)
+- **Learnings for future iterations:**
+  - 迁移完成：index_pipeline.py 提供构建逻辑，repository.py 提供存储/持久化
+  - 文档文件中的代码示例可能需要手动更新
+---

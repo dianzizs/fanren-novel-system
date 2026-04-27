@@ -1,9 +1,20 @@
 from __future__ import annotations
 
 from datetime import datetime
+from enum import Enum, auto
 from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
+
+
+class QueryIntent(Enum):
+    """查询意图类型。"""
+    CAUSAL_CHAIN = auto()       # 因果链：为什么、怎么、原因、结果
+    FACT_QUERY = auto()         # 事实查询：是什么、有哪些
+    CHARACTER_ANALYSIS = auto() # 人物分析：性格、外貌、是谁
+    SUMMARY = auto()            # 总结：概括、摘要
+    TEMPORAL = auto()           # 时间相关：什么时候、后来
+    GENERAL = auto()            # 通用查询
 
 
 TaskType = Literal[
@@ -123,7 +134,7 @@ class AskTrace(BaseModel):
     retrieval: RetrievalTrace
     evidence_count: int
     evidence_spans: list[EvidenceSpan] = Field(default_factory=list)
-    uncertainty: Literal["low", "medium", "high"]
+    confidence: Literal["low", "medium", "high"]
     total_duration_ms: float
     memory_state: dict[str, Any] = Field(default_factory=dict)
 
@@ -139,7 +150,7 @@ class ContinuationTrace(BaseModel):
     retrieval: RetrievalTrace
     evidence_count: int
     evidence_spans: list[EvidenceSpan] = Field(default_factory=list)
-    uncertainty: Literal["low", "medium", "high"]
+    confidence: Literal["low", "medium", "high"]
     validation: ValidationResult
     total_duration_ms: float
     memory_state: dict[str, Any] = Field(default_factory=dict)
@@ -193,7 +204,15 @@ class AskResponse(BaseModel):
     planner: PlannerOutput
     answer: str
     evidence: list[EvidenceItem]
-    uncertainty: Literal["low", "medium", "high"]
+    confidence: Literal["low", "medium", "high"] = Field(
+        default="medium",
+        description="答案置信度：high=高置信度，low=低置信度"
+    )
+    uncertainty: Optional[Literal["low", "medium", "high"]] = Field(
+        default=None,
+        deprecated=True,
+        description="已弃用，请使用 confidence 字段"
+    )
     scope: Scope
     memory: dict[str, Any] = Field(default_factory=dict)
     warnings: list[APIWarning] = Field(default_factory=list)
@@ -204,7 +223,15 @@ class ContinuationResponse(BaseModel):
     planner: PlannerOutput
     answer: str
     evidence: list[EvidenceItem]
-    uncertainty: Literal["low", "medium", "high"]
+    confidence: Literal["low", "medium", "high"] = Field(
+        default="medium",
+        description="答案置信度"
+    )
+    uncertainty: Optional[Literal["low", "medium", "high"]] = Field(
+        default=None,
+        deprecated=True,
+        description="已弃用，请使用 confidence 字段"
+    )
     scope: Scope
     validation: dict[str, Any] = Field(default_factory=dict)
     trace: Optional[ContinuationTrace] = None  # 可选追踪数据

@@ -13,6 +13,7 @@ Thumbs.db
 data/books/
 data/runtime/
 data/uploads/
+data/eval_p0*/
 
 *.log
 *.pid
@@ -23,3 +24,4 @@ default-book.txt
 *.epub
 *.docx
 
+.worktrees/
