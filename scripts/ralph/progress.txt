@@ -6,9 +6,28 @@ Started: Tue Apr 28 02:16:36     2026
 - novel_system/ is the core module, api.py is the entry point
 - Tests are in tests/ directory, run with pytest
 - retrieval.py delegates to search/orchestrator.py
-- vector_store/ contains FAISSVectorStore (not yet integrated)
+- vector_store/ contains FAISSVectorStore for dense retrieval
 - embedding/ contains LocalOpenVINOEmbeddingProvider and LocalCudaEmbeddingProvider
+- MockEmbeddingProvider can be used for testing without real model
 
+---
+
+## [Mon Apr 28 11:00:00 2026] - US-008
+- 创建 tests/test_vector_retrieval.py 测试文件
+- 使用 MockEmbeddingProvider 进行测试，避免依赖真实模型
+- 测试向量索引构建和加载 (test_vector_index_build_and_load)
+- 测试 TF-IDF + 向量混合检索 (test_hybrid_retrieval)
+- 测试向量索引不可用时的降级逻辑 (test_fallback_when_vector_store_missing)
+- 测试 _dense_search 方法 (test_dense_search_method)
+- 测试向量索引持久化 (test_vector_index_persistence)
+- Files changed:
+  - tests/test_vector_retrieval.py (created)
+  - scripts/ralph/prd.json (updated US-008 passes)
+  - scripts/ralph/progress.txt (this update)
+- **Learnings for future iterations:**
+  - MockEmbeddingProvider 使用 hash 生成确定性向量，适合测试
+  - 测试需要独立运行，不依赖外部模型文件
+  - FAISSVectorStore 需要 numpy 向量，注意类型转换
 ---
 
 ## [Mon Apr 28 10:40:00 2026] - US-007
