@@ -1,0 +1,431 @@
+{
+  "project": "小王一号",
+  "branchName": "ralph/system-refactor",
+  "description": "系统重构 - 修复运行时崩溃、核心功能失效、架构冗余等问题，共 5 个 Phase",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "修复 SemanticScorer 属性访问错误",
+      "description": "作为系统，需要正确访问 RetrievalHit 的文本内容，以便语义评分不再是固定 0.5。",
+      "acceptanceCriteria": [
+        "semantic_scorer.py 中属性访问改为从 hit.document 字典获取：text = hit.document.get('text', '')",
+        "chunk_id = hit.document.get('id', '')",
+        "添加单元测试验证语义分数不再是固定 0.5",
+        "conda run -n chaishu python -m pytest tests/test_semantic_scorer.py -v 通过",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "修复 TF-IDF scope 过滤索引对齐",
+      "description": "作为系统，需要确保 scope 过滤后 docs 与 matrix 索引对齐，返回正确的文档。",
+      "acceptanceCriteria": [
+        "scope 过滤后返回的文档确实属于指定章节范围",
+        "添加测试用例：scope=[1,3] 时返回的文档 chapter 在 1-3 范围内",
+        "conda run -n chaishu python -m pytest tests/test_tfidf_retrieval.py -v 通过",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "修复 _in_scope 范围语义",
+      "description": "作为系统，需要正确处理章节范围语义，scope=[1,5] 应包含 chapter 2/3/4。",
+      "acceptanceCriteria": [
+        "_in_scope([1,5], 2) 返回 True",
+        "_in_scope([1,5], 3) 返回 True",
+        "_in_scope([1,5], 6) 返回 False",
+        "添加单元测试覆盖范围语义",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "修复 ContinuationTrace 字段名",
+      "description": "作为系统，需要正确构造 ContinuationTrace，避免 debug=true 时崩溃。",
+      "acceptanceCriteria": [
+        "搜索所有 uncertainty= 并改为 confidence=",
+        "debug=true 调用 continue_story 端点不崩溃",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "修复 ContinuationResponse confidence 赋值",
+      "description": "作为系统，需要从验证结果正确计算 confidence 值，而不是永远返回 'medium'。",
+      "acceptanceCriteria": [
+        "confidence 值根据验证结果动态计算：has_critical_issues -> low, has_warnings -> medium, else -> high",
+        "有严重问题时 confidence 为 'low'",
+        "无问题时 confidence 为 'high'",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "修复别名匹配方向",
+      "description": "作为系统，需要正确匹配别名，避免短别名误匹配。",
+      "acceptanceCriteria": [
+        "别名匹配方向改为 value in query（别名在查询中）",
+        "短别名（单字）使用分词匹配或跳过",
+        "添加测试用例验证匹配方向正确",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "统一别名映射",
+      "description": "作为开发者，需要将分散在 4+ 文件中的别名映射统一到单一数据源。",
+      "acceptanceCriteria": [
+        "创建 novel_system/aliases.py 包含所有别名定义（ALIAS_MAP）",
+        "planner.py, entity_extractor.py, validator.py, indexing.py 改为导入别名",
+        "conda run -n chaishu python -c 'from novel_system.aliases import ALIAS_MAP' 成功",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "改进 _sparse_fallback",
+      "description": "作为系统，需要在 sparse fallback 时过滤停用词，提高匹配质量。",
+      "acceptanceCriteria": [
+        "sparse fallback 不再匹配纯停用词",
+        "STOPWORDS 集合包含常见中文停用词",
+        "添加测试用例验证停用词过滤",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-009",
+      "title": "实现跨 target rerank",
+      "description": "作为系统，需要对多 target 结果统一排序，而不是简单拼接。",
+      "acceptanceCriteria": [
+        "多 target 检索结果按分数统一排序",
+        "添加 _normalize_scores 方法归一化分数",
+        "添加测试验证排序正确性",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-010",
+      "title": "修复 profiles.py 配置生效",
+      "description": "作为系统，需要让 SearchProfile 配置实际生效，特别是 text_field 配置。",
+      "acceptanceCriteria": [
+        "character_card 的 text_field 改为 'text'",
+        "orchestrator 从 profile 读取 id_field, text_field 配置",
+        "添加测试验证配置生效",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-011",
+      "title": "SpoilerGuard 降噪",
+      "description": "作为系统，需要降低 SpoilerGuard 误报率，不再对正常叙事报警。",
+      "acceptanceCriteria": [
+        "移除过于通用的关键词：'成功', '发现', '终于', '获得'",
+        "改为需要 >= 2 个关键词才触发",
+        "添加测试：正常叙事不触发报警",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-012",
+      "title": "check_world_boundary 降噪",
+      "description": "作为系统，需要降低 check_world_boundary 误报率。",
+      "acceptanceCriteria": [
+        "只检查核心实体：韩立, 瓶灵, 掌天瓶",
+        "不再对 '修士' 等通用词报警",
+        "添加测试验证误报率降低",
+        "Typecheck passes"
+      ],
+      "priority": 12,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-013",
+      "title": "修复 _check_appearance 双重计数",
+      "description": "作为系统，需要避免颜色矛盾被报告两次。",
+      "acceptanceCriteria": [
+        "合并 entity_extractor.check_entity_consistency() 和 _check_color_consistency() 为单一检查",
+        "同一颜色矛盾只报告一次",
+        "添加测试验证",
+        "Typecheck passes"
+      ],
+      "priority": 13,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-014",
+      "title": "Validator 结果阻断",
+      "description": "作为系统，需要让验证结果实际影响最终输出。",
+      "acceptanceCriteria": [
+        "严重问题会降低 confidence 为 'low'",
+        "警告会附加到 response.warnings",
+        "添加集成测试验证",
+        "Typecheck passes"
+      ],
+      "priority": 14,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-015",
+      "title": "创建 AnswerService",
+      "description": "作为开发者，需要将 ask 流程从 service.py 拆分为独立模块。",
+      "acceptanceCriteria": [
+        "创建 novel_system/answer_service.py",
+        "AnswerService 类包含 async ask() 方法",
+        "service.py 保留为 facade，委托给 AnswerService",
+        "现有测试通过",
+        "Typecheck passes"
+      ],
+      "priority": 15,
+      "passes": true,
+      "notes": "实现了同步版本而非 async，因为系统未使用 async 模式"
+    },
+    {
+      "id": "US-016",
+      "title": "创建 ContinuationService",
+      "description": "作为开发者，需要将 continue 流程从 service.py 拆分为独立模块。",
+      "acceptanceCriteria": [
+        "创建 novel_system/continuation_service.py",
+        "ContinuationService 类包含 async continue_story() 方法",
+        "service.py 保留为 facade",
+        "现有测试通过",
+        "Typecheck passes"
+      ],
+      "priority": 16,
+      "passes": true,
+      "notes": "实现了同步版本而非 async，因为系统未使用 async 模式"
+    },
+    {
+      "id": "US-017",
+      "title": "创建 GraphService",
+      "description": "作为开发者，需要将图谱相关逻辑从 service.py 拆分为独立模块。",
+      "acceptanceCriteria": [
+        "创建 novel_system/graph_service.py",
+        "GraphService 类包含 get_interactive_graph() 方法",
+        "迁移 service.py 行 79-193 的图相关常量",
+        "现有测试通过",
+        "Typecheck passes"
+      ],
+      "priority": 17,
+      "passes": true,
+      "notes": "图相关常量已迁移到 graph_service.py"
+    },
+    {
+      "id": "US-018",
+      "title": "实现 LLM 重试",
+      "description": "作为系统，需要实现已定义但未使用的重试机制。",
+      "acceptanceCriteria": [
+        "chat() 方法包含重试循环，使用 MAX_RETRIES 和 RETRY_DELAYS",
+        "捕获 RateLimitError 和 TimeoutError 进行重试",
+        "添加测试验证重试逻辑",
+        "Typecheck passes"
+      ],
+      "priority": 18,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-019",
+      "title": "修复 _fallback_analysis 硬编码",
+      "description": "作为系统，需要将硬编码的 fallback 改为基于检索结果的动态兜底。",
+      "acceptanceCriteria": [
+        "_fallback_analysis() 不再返回硬编码文本 '韩立发现瓶子...'",
+        "基于检索结果生成兜底答案，无结果时返回 '抱歉，未能找到相关信息。'",
+        "添加测试验证",
+        "Typecheck passes"
+      ],
+      "priority": 19,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-020",
+      "title": "删除 run_eval.py 硬编码",
+      "description": "作为开发者，需要删除评测脚本中的硬编码特殊 case。",
+      "acceptanceCriteria": [
+        "无硬编码测试用例 ID（如 product_002）",
+        "评测脚本能处理通用测试用例",
+        "Typecheck passes"
+      ],
+      "priority": 20,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-021",
+      "title": "添加评测 KeyError 保护",
+      "description": "作为开发者，需要添加 category 字段的 KeyError 保护。",
+      "acceptanceCriteria": [
+        "使用 category = case.get('category', 'unknown') 避免 KeyError",
+        "添加 per-case 异常捕获",
+        "Typecheck passes"
+      ],
+      "priority": 21,
+      "passes": true,
+      "notes": "已在 US-020 修改中一并实现"
+    },
+    {
+      "id": "US-022",
+      "title": "统一评测输出路径",
+      "description": "作为开发者，需要统一评测输出路径。",
+      "acceptanceCriteria": [
+        "所有评测输出使用统一路径 eval_output/",
+        "无路径分裂问题",
+        "Typecheck passes"
+      ],
+      "priority": 22,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-023",
+      "title": "删除死代码",
+      "description": "作为开发者，需要删除已识别的死代码。",
+      "acceptanceCriteria": [
+        "删除 search/base.py 中 SparseBackend, DenseBackend Protocol 和 RetrievalCandidate",
+        "删除 validator.py 中 CharacterIssue model 和 _extract_appearance_keywords, _find_contradiction",
+        "删除 planner.py 中 SCOPE_HINT_RE, PRONOUN_RE 和 lowered 变量",
+        "删除 semantic_scorer.py 中 _scorer 全局单例和 get_scorer()",
+        "conda run -n chaishu python -m pytest tests/ -v 通过",
+        "Typecheck passes"
+      ],
+      "priority": 23,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-024",
+      "title": "修正 requirements.txt",
+      "description": "作为开发者，需要修正依赖配置。",
+      "acceptanceCriteria": [
+        "添加缺失依赖",
+        "添加版本上限约束",
+        "conda run -n chaishu pip install -r requirements.txt 成功",
+        "Typecheck passes"
+      ],
+      "priority": 24,
+      "passes": true,
+      "notes": "所有依赖已满足，pip install 成功。未添加版本上限因为现代最佳实践建议只在已知不兼容时添加"
+    },
+    {
+      "id": "US-025",
+      "title": "补充 semantic_scorer 单元测试",
+      "description": "作为开发者，需要补充 semantic_scorer 的单元测试。",
+      "acceptanceCriteria": [
+        "tests/test_semantic_scorer.py 存在",
+        "覆盖语义评分核心逻辑",
+        "conda run -n chaishu python -m pytest tests/test_semantic_scorer.py -v 通过",
+        "Typecheck passes"
+      ],
+      "priority": 25,
+      "passes": true,
+      "notes": "测试已在之前迭代中创建并验证通过"
+    },
+    {
+      "id": "US-026",
+      "title": "补充 llm 重试逻辑测试",
+      "description": "作为开发者，需要补充 llm.py 重试逻辑的测试。",
+      "acceptanceCriteria": [
+        "tests/test_llm_retry.py 存在",
+        "验证重试次数和延迟",
+        "conda run -n chaishu python -m pytest tests/test_llm_retry.py -v 通过",
+        "Typecheck passes"
+      ],
+      "priority": 26,
+      "passes": true,
+      "notes": "测试已在 US-018 中创建并验证通过"
+    },
+    {
+      "id": "US-027",
+      "title": "完善 index_pipeline.py 接入",
+      "description": "作为开发者，需要完善新索引管道并接入 service 层。",
+      "acceptanceCriteria": [
+        "index_pipeline 完全替代 indexing.py 功能",
+        "service 层使用新管道",
+        "现有测试通过",
+        "Typecheck passes"
+      ],
+      "priority": 27,
+      "passes": true,
+      "notes": "创建了 novel_system/repository.py 包含 BookIndexRepository 和工具函数。service_shared.py 现在从 repository.py 导入。indexing.py 是兼容性 shim。"
+    },
+    {
+      "id": "US-028",
+      "title": "删除旧索引管道",
+      "description": "作为开发者，需要在确认新管道稳定后删除旧管道。",
+      "acceptanceCriteria": [
+        "novel_system/indexing.py 已删除",
+        "无引用该文件的其他代码",
+        "所有测试通过",
+        "Typecheck passes"
+      ],
+      "priority": 28,
+      "passes": true,
+      "notes": "indexing.py 已删除。所有功能已迁移到 repository.py。"
+    },
+    {
+      "id": "US-029",
+      "title": "统一 Planner 路由",
+      "description": "作为开发者，需要合并 if-else 链和 _detect_intent() 为单一路由表。",
+      "acceptanceCriteria": [
+        "创建 ROUTE_TABLE 字典驱动路由",
+        "_detect_intent 使用路由表",
+        "retrieval_intent 字段被下游消费",
+        "现有测试通过",
+        "Typecheck passes"
+      ],
+      "priority": 29,
+      "passes": true,
+      "notes": "添加 query_intent 到 PlannerOutput，下游使用 planner.query_intent 而非重新调用 _detect_intent()"
+    },
+    {
+      "id": "US-030",
+      "title": "注入 rewrite_note 到 LLM context",
+      "description": "作为系统，需要将 rewrite_note 注入 LLM messages。",
+      "acceptanceCriteria": [
+        "在 LLM 调用前，若 rewrite_note 存在则注入 messages",
+        "messages.append({'role': 'system', 'content': rewrite_note})",
+        "添加测试验证注入",
+        "Typecheck passes"
+      ],
+      "priority": 30,
+      "passes": true,
+      "notes": ""
+    }
+  ]
+}

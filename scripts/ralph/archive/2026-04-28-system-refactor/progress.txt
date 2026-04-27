@@ -1,0 +1,14 @@
+# Ralph Progress Log
+Started: Mon Apr 28 2026
+---
+
+## Codebase Patterns
+- 项目使用 conda 环境 `chaishu`，所有 Python 命令需用 `conda run -n chaishu python`
+- 测试命令：`conda run -n chaishu python -m pytest tests/ -v`
+- 类型检查：`pyright` 或 `conda run -n chaishu pyright`
+- API 入口：`novel_system/api.py`
+- 服务聚合：`novel_system/service.py`
+- 索引流水线：`novel_system/index_pipeline.py`
+- 仓储层：`novel_system/repository.py`
+
+---

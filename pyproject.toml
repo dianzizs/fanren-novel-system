@@ -1,0 +1,15 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*", "*Test"]
+python_functions = ["test_*"]
+norecursedirs = [
+  ".git",
+  ".pytest_cache",
+  ".worktrees",
+  "__pycache__",
+  "data",
+  "docs",
+  "static",
+  "templates",
+]

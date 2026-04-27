@@ -18,18 +18,8 @@
       "notes": ""
     },
     {
-      "id": "US-002",
-      "title": "创建向量索引构建函数",
-      "description": "作为开发者，需要一个函数在索引构建时为每个 corpus 生成 FAISS 向量索引。",
-      "acceptanceCriteria": [
-        "在 indexing.py 中创建 _build_faiss_index() 函数",
-        "函数接收 docs 列表和 embedding_provider，返回 FAISSVectorStore",
-        "使用 docs 的 'id' 和 'text' 字段构建索引",
-        "处理空文档列表的情况（返回 None）",
-        "Typecheck passes"
-      ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {

@@ -1,0 +1,324 @@
+{
+  "project": "小王一号",
+  "branchName": "ralph/q2-engineering-improvement",
+  "description": "季度工程化改造 - 基线收敛、质量闭环、发布韧性三阶段",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "创建模块清单文档",
+      "description": "作为开发者，需要一份当前模块和入口链路的准确清单，作为后续改造的参考基线。",
+      "acceptanceCriteria": [
+        "创建 docs/baseline/modules.md 文档",
+        "文档包含所有 novel_system/*.py 模块及其职责说明",
+        "文档包含入口点说明（api.py, service.py）",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "创建脚本说明文档",
+      "description": "作为开发者，需要一份 scripts/ 目录下核心脚本的准确说明。",
+      "acceptanceCriteria": [
+        "创建 docs/baseline/scripts.md 文档",
+        "文档包含 run_api.py, build_index.py, run_eval.py 的说明",
+        "每个脚本说明包含：用途、输入、输出、失败行为",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "对齐 README 项目结构部分",
+      "description": "作为新加入的开发者，需要 README 中的项目结构与实际代码一致。",
+      "acceptanceCriteria": [
+        "README.md 中的项目结构与当前代码一致",
+        "运行步骤与实际脚本匹配",
+        "移除过时或错误的路径引用",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "统一评测路径约定",
+      "description": "作为开发者，需要评测报告路径在服务和仪表盘中统一。",
+      "acceptanceCriteria": [
+        "run_eval.py 输出路径与服务读取路径一致",
+        "创建 docs/baseline/eval_paths.md 记录路径约定",
+        "验证端到端评测流程正常运行",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "创建配置项说明清单",
+      "description": "作为开发者，需要一份配置项的完整说明。",
+      "acceptanceCriteria": [
+        "创建 docs/baseline/config.md 文档",
+        "文档列出所有环境变量：必须项、可选项、默认值",
+        ".env.example 与文档一致",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "验证核心脚本可重复性",
+      "description": "作为开发者，需要确保三个核心脚本可重复运行。",
+      "acceptanceCriteria": [
+        "scripts/build_index.py 可重复运行，无残留状态问题",
+        "scripts/run_api.py 可正常启动，日志落点明确",
+        "scripts/run_eval.py 可重复运行，失败行为清晰",
+        "在 docs/baseline/scripts.md 中记录验证结果",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "创建测试策略文档",
+      "description": "作为开发者，需要一份测试分层策略文档。",
+      "acceptanceCriteria": [
+        "创建 docs/testing/strategy.md 文档",
+        "文档定义单测、集成测试、回归测试的边界",
+        "文档定义 P0 关键路径列表",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "补充问答核心路径测试",
+      "description": "作为开发者，需要问答流程有关键回归测试。",
+      "acceptanceCriteria": [
+        "添加或更新问答端点的集成测试",
+        "测试覆盖正常问答流程",
+        "测试覆盖错误处理路径",
+        "conda run -n chaishu python -m pytest tests/ -v 通过",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-009",
+      "title": "补充续写核心路径测试",
+      "description": "作为开发者，需要续写流程有关键回归测试。",
+      "acceptanceCriteria": [
+        "添加或更新续写端点的集成测试",
+        "测试覆盖正常续写流程",
+        "测试覆盖验证结果阻断场景",
+        "conda run -n chaishu python -m pytest tests/ -v 通过",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-010",
+      "title": "补充索引构建测试",
+      "description": "作为开发者，需要索引构建流程有关键回归测试。",
+      "acceptanceCriteria": [
+        "添加或更新索引构建的集成测试",
+        "测试覆盖书籍导入流程",
+        "测试覆盖索引生成流程",
+        "conda run -n chaishu python -m pytest tests/ -v 通过",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-011",
+      "title": "创建错误分类文档",
+      "description": "作为开发者，需要一份错误码和错误分类的约定文档。",
+      "acceptanceCriteria": [
+        "创建 docs/standards/errors.md 文档",
+        "文档定义错误分类：用户输入错误、业务校验错误、外部依赖错误",
+        "文档定义日志字段规范：请求ID、book_id、阶段、耗时、错误类型",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-012",
+      "title": "统一日志字段格式",
+      "description": "作为开发者，需要日志字段格式统一。",
+      "acceptanceCriteria": [
+        "更新关键模块的日志调用，使用统一字段格式",
+        "日志包含 request_id、book_id、stage 字段",
+        "conda run -n chaishu python -m pytest tests/ -v 通过",
+        "Typecheck passes"
+      ],
+      "priority": 12,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-013",
+      "title": "创建安全基线检查清单",
+      "description": "作为开发者，需要一份安全基线检查清单。",
+      "acceptanceCriteria": [
+        "创建 docs/standards/security.md 文档",
+        "文档包含上传文件路径校验规则",
+        "文档包含敏感配置处理规则",
+        "Typecheck passes"
+      ],
+      "priority": 13,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-014",
+      "title": "实现文件上传安全校验",
+      "description": "作为系统，需要确保文件上传路径安全。",
+      "acceptanceCriteria": [
+        "添加文件名安全校验，禁止路径遍历",
+        "添加文件类型白名单检查",
+        "添加相应的单元测试",
+        "conda run -n chaishu python -m pytest tests/ -v 通过",
+        "Typecheck passes"
+      ],
+      "priority": 14,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-015",
+      "title": "审计敏感配置处理",
+      "description": "作为开发者，需要确保敏感配置不被写死在代码或日志中。",
+      "acceptanceCriteria": [
+        "审计代码中的硬编码敏感信息",
+        "确保敏感配置仅来自环境变量",
+        "确保日志不输出敏感信息",
+        "Typecheck passes"
+      ],
+      "priority": 15,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-016",
+      "title": "创建依赖分层方案",
+      "description": "作为开发者，需要一份依赖分层安装方案。",
+      "acceptanceCriteria": [
+        "创建 docs/deployment/dependencies.md 文档",
+        "定义基础运行集（核心依赖）",
+        "定义增强运行集（加速依赖）",
+        "说明 CPU-only 与加速环境差异",
+        "Typecheck passes"
+      ],
+      "priority": 16,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-017",
+      "title": "拆分 requirements.txt",
+      "description": "作为开发者，需要依赖文件支持分层安装。",
+      "acceptanceCriteria": [
+        "创建 requirements-base.txt（核心依赖）",
+        "创建 requirements-accelerated.txt（加速依赖）",
+        "requirements.txt 保留为完整依赖（包含两者）",
+        "conda run -n chaishu pip install -r requirements-base.txt 成功",
+        "Typecheck passes"
+      ],
+      "priority": 17,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-018",
+      "title": "创建发布检查清单",
+      "description": "作为开发者，需要一份发布前检查清单。",
+      "acceptanceCriteria": [
+        "创建 docs/deployment/release-checklist.md 文档",
+        "清单包含配置检查项",
+        "清单包含测试检查项",
+        "清单包含数据目录检查项",
+        "Typecheck passes"
+      ],
+      "priority": 18,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-019",
+      "title": "创建回滚 runbook",
+      "description": "作为开发者，需要一份回滚预案文档。",
+      "acceptanceCriteria": [
+        "创建 docs/deployment/rollback.md 文档",
+        "文档包含索引产物回滚步骤",
+        "文档包含配置变更回滚步骤",
+        "Typecheck passes"
+      ],
+      "priority": 19,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-020",
+      "title": "建立性能基线记录",
+      "description": "作为开发者，需要记录关键流程的性能基线。",
+      "acceptanceCriteria": [
+        "创建 docs/baseline/performance.md 文档",
+        "记录问答平均耗时和 P95",
+        "记录索引构建平均耗时",
+        "定义波动阈值",
+        "Typecheck passes"
+      ],
+      "priority": 20,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-021",
+      "title": "更新 README 为最终状态",
+      "description": "作为开发者，需要在季度末更新 README 反映所有改造成果。",
+      "acceptanceCriteria": [
+        "README.md 反映最终项目状态",
+        "所有文档链接正确",
+        "所有脚本路径正确",
+        "Typecheck passes"
+      ],
+      "priority": 21,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-022",
+      "title": "创建季度改造总结",
+      "description": "作为开发者，需要一份季度改造总结文档。",
+      "acceptanceCriteria": [
+        "创建 docs/reports/2026-q2-summary.md 文档",
+        "总结完成的改造内容",
+        "记录遗留问题和下季度建议",
+        "Typecheck passes"
+      ],
+      "priority": 22,
+      "passes": true,
+      "notes": ""
+    }
+  ]
+}
