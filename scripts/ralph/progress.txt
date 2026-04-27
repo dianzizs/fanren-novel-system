@@ -11,6 +11,22 @@ Started: Tue Apr 28 02:16:36     2026
 
 ---
 
+## [Mon Apr 28 10:25:00 2026] - US-004
+- load() 方法检查 <book_dir>/vectors/<corpus_name>/ 目录是否存在
+- 存在则从 metadata.json 读取维度和度量信息
+- 创建 FAISSVectorStore 并调用 load() 加载索引
+- vector_stores 字典填充已加载的向量存储
+- 加载失败时记录警告日志但不抛出异常（降级到 TF-IDF）
+- Files changed:
+  - novel_system/indexing.py (modified load method)
+  - scripts/ralph/prd.json (updated US-004 passes)
+  - scripts/ralph/progress.txt (this update)
+- **Learnings for future iterations:**
+  - FAISSVectorStore.load() 需要先创建实例，再调用 load()
+  - 向量索引加载是可选的，失败时降级到纯 TF-IDF
+  - metadata.json 包含 dimension 和 metric 信息
+---
+
 ## [Mon Apr 28 10:20:00 2026] - US-003
 - 修改 BookIndexRepository.__init__ 接收可选的 embedding_provider 参数
 - build_from_txt() 为每个 corpus 调用 _build_faiss_index() 构建向量索引
