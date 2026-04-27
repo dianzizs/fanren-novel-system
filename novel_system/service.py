@@ -1328,6 +1328,7 @@ class NovelSystemService:
         scope: Scope,
         top_k: int,
         simulate: str | None,
+        query_embedding: list[float] | None = None,
     ) -> list[RetrievalHit]:
         retriever = HybridRetriever(book_index)
         hits = retriever.retrieve(
@@ -1336,8 +1337,28 @@ class NovelSystemService:
             chapter_scope=scope.chapters,
             top_k=top_k,
             simulate=simulate,
+            query_embedding=query_embedding,
         )
         return hits
+
+    def _compute_query_embedding(self, query: str) -> list[float] | None:
+        """计算查询文本的 embedding 向量。
+
+        Args:
+            query: 查询文本
+
+        Returns:
+            embedding 向量，计算失败时返回 None
+        """
+        if self.embedding_provider is None:
+            return None
+        try:
+            embeddings = self.embedding_provider.embed([query])
+            if embeddings and len(embeddings) > 0:
+                return embeddings[0]
+        except Exception:
+            pass
+        return None
 
     def _retrieve_with_rewrite(
         self,
@@ -1350,12 +1371,17 @@ class NovelSystemService:
     ) -> list[RetrievalHit]:
         """Use rewritten query for main retrieval, original query for supplementary recall"""
         retriever = HybridRetriever(book_index)
+
+        # 计算 query embedding 用于向量检索
+        query_embedding = self._compute_query_embedding(rewritten.rewritten)
+
         rewritten_hits = retriever.retrieve(
             query=rewritten.rewritten,
             targets=planner.retrieval_targets,
             chapter_scope=scope.chapters,
             top_k=top_k,
             simulate=simulate,
+            query_embedding=query_embedding,
         )
         original_hits = retriever.retrieve(
             query=rewritten.original,
@@ -1363,6 +1389,7 @@ class NovelSystemService:
             chapter_scope=scope.chapters,
             top_k=max(3, top_k // 2),
             simulate=simulate,
+            query_embedding=None,  # 原始查询不需要向量检索
         )
         seen: set[tuple[str, str]] = set()
         merged: list[RetrievalHit] = []
