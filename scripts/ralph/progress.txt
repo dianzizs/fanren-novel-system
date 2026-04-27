@@ -11,6 +11,23 @@ Started: Tue Apr 28 02:16:36     2026
 
 ---
 
+## [Mon Apr 28 10:40:00 2026] - US-007
+- NovelSystemService 初始化时创建 embedding_provider（已存在）
+- 添加 _compute_query_embedding() 方法计算查询向量
+- _retrieve_with_rewrite() 调用 embedding_provider.embed([query]) 获取 query_embedding
+- query_embedding 传递给 HybridRetriever.retrieve()
+- 处理 embedding 计算失败的情况（返回 None，降级到纯 TF-IDF）
+- Files changed:
+  - novel_system/retrieval.py (added query_embedding parameter)
+  - novel_system/service.py (added _compute_query_embedding method)
+  - scripts/ralph/prd.json (updated US-007 passes)
+  - scripts/ralph/progress.txt (this update)
+- **Learnings for future iterations:**
+  - embedding_provider.embed() 返回向量列表，取第一个元素作为 query embedding
+  - embedding 计算是可选的，失败时降级到纯 TF-IDF
+  - 原始查询不需要向量检索，避免重复计算
+---
+
 ## [Mon Apr 28 10:35:00 2026] - US-006
 - retrieve() 方法接收可选的 query_embedding 参数
 - 当 query_embedding 提供且 vector_store 存在时，调用 _dense_search()
