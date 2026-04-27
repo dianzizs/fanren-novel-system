@@ -11,6 +11,22 @@ Started: Tue Apr 28 02:16:36     2026
 
 ---
 
+## [Mon Apr 28 10:30:00 2026] - US-005
+- 在 orchestrator.py 中添加 _dense_search() 方法
+- 方法接收 query_vector, vector_store, target, top_k 参数
+- 返回格式与 _tfidf_search() 一致的 hits 列表
+- 处理 vector_store 为 None 的情况（返回空列表）
+- 添加 TYPE_CHECKING 导入避免循环依赖
+- Files changed:
+  - novel_system/search/orchestrator.py (added _dense_search method)
+  - scripts/ralph/prd.json (updated US-005 passes)
+  - scripts/ralph/progress.txt (this update)
+- **Learnings for future iterations:**
+  - _dense_search 返回格式与 _tfidf_search 一致，便于结果合并
+  - 使用 try-except 处理向量搜索异常
+  - TYPE_CHECKING 用于类型提示，避免运行时导入
+---
+
 ## [Mon Apr 28 10:25:00 2026] - US-004
 - load() 方法检查 <book_dir>/vectors/<corpus_name>/ 目录是否存在
 - 存在则从 metadata.json 读取维度和度量信息
