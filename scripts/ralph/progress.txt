@@ -9,7 +9,30 @@ Started: Tue Apr 28 02:16:36     2026
 - vector_store/ contains FAISSVectorStore for dense retrieval
 - embedding/ contains LocalOpenVINOEmbeddingProvider and LocalCudaEmbeddingProvider
 - MockEmbeddingProvider can be used for testing without real model
+- Documentation files are in docs/baseline/
 
+---
+
+## [Mon Apr 28 11:15:00 2026] - US-009
+- 创建 docs/baseline/ 目录
+- 创建 docs/baseline/modules.md 说明向量检索模块
+- 创建 docs/baseline/config.md 说明 EMBEDDING_PROVIDER 用途和环境变量
+- 文档包含：
+  - 核心模块说明（indexing, orchestrator, retrieval, service, vector_store, embedding）
+  - 混合检索流程图
+  - 降级策略说明
+  - 环境变量配置表
+  - Embedding Provider 选择建议
+  - 索引文件结构说明
+- Files changed:
+  - docs/baseline/modules.md (created)
+  - docs/baseline/config.md (created)
+  - scripts/ralph/prd.json (updated US-009 passes)
+  - scripts/ralph/progress.txt (this update)
+- **Learnings for future iterations:**
+  - 文档使用中文撰写，符合项目风格
+  - 配置表使用 Markdown 表格格式
+  - 流程图使用 ASCII 文本表示
 ---
 
 ## [Mon Apr 28 11:00:00 2026] - US-008
