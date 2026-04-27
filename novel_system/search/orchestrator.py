@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from .profiles import TARGET_PROFILES
+
+if TYPE_CHECKING:
+    from ..vector_store.base import BaseVectorStore
 
 
 @dataclass
@@ -143,6 +146,42 @@ class SearchOrchestrator:
                     "document": docs[idx],
                     "score": float(scores[idx]),
                 })
+        return hits
+
+    def _dense_search(
+        self,
+        query_vector: list[float],
+        vector_store: "BaseVectorStore",
+        target: str,
+        top_k: int,
+    ) -> list[dict[str, Any]]:
+        """使用向量搜索进行检索。
+
+        Args:
+            query_vector: 查询向量
+            vector_store: 向量存储实例
+            target: 检索目标名称
+            top_k: 返回数量
+
+        Returns:
+            命中结果列表
+        """
+        if vector_store is None:
+            return []
+
+        try:
+            results = vector_store.search(query_vector, top_k=top_k)
+        except Exception:
+            return []
+
+        hits = []
+        for result in results:
+            hits.append({
+                "target": target,
+                "document_id": result.id,
+                "document": result.document,
+                "score": result.score,
+            })
         return hits
 
     def _sparse_fallback(
