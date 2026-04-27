@@ -256,6 +256,7 @@ class BookIndexRepository:
         has_vector_index = False
         if self._embedding_provider is not None:
             vectors_dir = book_dir / "vectors"
+            vectors_dir.mkdir(parents=True, exist_ok=True)
             for name, docs in corpora.items():
                 if not docs:
                     continue
@@ -263,6 +264,7 @@ class BookIndexRepository:
                     vector_store = self._build_faiss_index(docs, self._embedding_provider)
                     if vector_store is not None:
                         corpus_vector_dir = vectors_dir / name
+                        corpus_vector_dir.mkdir(parents=True, exist_ok=True)
                         vector_store.save(str(corpus_vector_dir))
                         has_vector_index = True
                         logger.info(f"Saved vector index for {name} to {corpus_vector_dir}")
@@ -646,7 +648,8 @@ class BookIndexRepository:
             )
         return docs
 
-    def _tokenize_chinese(self, text: str) -> list[str]:
+    @staticmethod
+    def _tokenize_chinese(text: str) -> list[str]:
         """中文分词，用于 TF-IDF。"""
         return list(jieba.cut(text))
 
