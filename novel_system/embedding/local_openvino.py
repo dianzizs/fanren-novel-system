@@ -90,7 +90,7 @@ class LocalOpenVINOEmbeddingProvider(EmbeddingProvider):
         model_cache_path = self.cache_dir / self.model_name.replace("/", "_")
 
         # 检查是否已有导出的 IR 模型
-        if not (model_cache_path / "model.xml").exists():
+        if not (model_cache_path / "openvino_model.xml").exists():
             logger.info(f"Exporting model {self.model_name} to OpenVINO IR format...")
             # 导出模型
             ov_model = OVModelForFeatureExtraction.from_pretrained(

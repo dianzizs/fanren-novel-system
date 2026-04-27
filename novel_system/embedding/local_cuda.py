@@ -80,7 +80,7 @@ class LocalCUDAEmbeddingProvider(EmbeddingProvider):
         )
 
         # 获取维度
-        self._dimension = self._model.get_sentence_embedding_dimension()
+        self._dimension = self._model.get_embedding_dimension()
         logger.info(
             f"Loaded embedding model {self.model_name} on {self._actual_device}, "
             f"dimension={self._dimension}"

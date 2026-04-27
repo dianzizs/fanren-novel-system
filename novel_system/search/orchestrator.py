@@ -1,6 +1,7 @@
 """Search orchestrator for multi-target retrieval."""
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any, TYPE_CHECKING
 
@@ -8,6 +9,8 @@ from .profiles import TARGET_PROFILES
 
 if TYPE_CHECKING:
     from ..vector_store.base import BaseVectorStore
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -185,7 +188,8 @@ class SearchOrchestrator:
 
         try:
             results = vector_store.search(query_vector, top_k=top_k)
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Vector search failed for target={target}: {e}")
             return []
 
         hits = []

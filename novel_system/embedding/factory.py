@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .base import EmbeddingProvider
+from .local_cuda import LocalCUDAEmbeddingProvider
 from .local_openvino import LocalOpenVINOEmbeddingProvider
 
 if TYPE_CHECKING:
@@ -34,6 +35,15 @@ def create_embedding_provider(config: "AppConfig") -> EmbeddingProvider:
             model_name=config.local_embedding_model,
             device=config.local_embedding_device,
             fallback_device=config.local_embedding_fallback_device,
+            batch_size=config.local_embedding_batch_size,
+            normalize=config.local_embedding_normalize,
+            cache_dir=config.local_embedding_cache_dir,
+        )
+    elif provider_type == "local_cuda":
+        logger.info(f"Creating LocalCUDAEmbeddingProvider with model {config.local_embedding_model}")
+        return LocalCUDAEmbeddingProvider(
+            model_name=config.local_embedding_model,
+            device=config.local_embedding_device,
             batch_size=config.local_embedding_batch_size,
             normalize=config.local_embedding_normalize,
             cache_dir=config.local_embedding_cache_dir,

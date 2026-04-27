@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from pathlib import Path
+from urllib.parse import unquote
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 
@@ -34,6 +35,17 @@ def _sanitize_book_id(name: str) -> str:
     cleaned = "".join(c if c.isalnum() or c in "_-" else "-" for c in name)
     cleaned = re.sub(r"-+", "-", cleaned).strip(" -")
     return cleaned[:60] if cleaned else name[:30]
+
+
+def _normalize_book_id(book_id: str) -> str:
+    """Decode already-escaped book ids from client-side hash routing."""
+    normalized = book_id
+    for _ in range(3):
+        decoded = unquote(normalized)
+        if decoded == normalized:
+            break
+        normalized = decoded
+    return normalized
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -85,6 +97,7 @@ def create_app() -> FastAPI:
 
     @app.delete("/api/books/{book_id}")
     async def delete_book(book_id: str):
+        book_id = _normalize_book_id(book_id)
         try:
             return service.delete_book(book_id)
         except FileNotFoundError as e:
@@ -135,6 +148,7 @@ def create_app() -> FastAPI:
 
     @app.post("/api/books/{book_id}/index")
     async def index_book(book_id: str):
+        book_id = _normalize_book_id(book_id)
         books = {book.id: book for book in service.list_books()}
         book = books.get(book_id)
         if book_id == config.default_book_id:
@@ -147,6 +161,7 @@ def create_app() -> FastAPI:
 
     @app.get("/api/books/{book_id}/status")
     async def get_book_status(book_id: str):
+        book_id = _normalize_book_id(book_id)
         try:
             return service.get_book_status(book_id)
         except FileNotFoundError as e:
@@ -154,6 +169,7 @@ def create_app() -> FastAPI:
 
     @app.post("/api/books/{book_id}/start-index")
     async def start_book_index(book_id: str):
+        book_id = _normalize_book_id(book_id)
         try:
             return service.start_book_index(book_id)
         except FileNotFoundError as e:
@@ -161,6 +177,7 @@ def create_app() -> FastAPI:
 
     @app.get("/api/books/{book_id}/artifacts")
     async def get_book_artifacts(book_id: str):
+        book_id = _normalize_book_id(book_id)
         try:
             return service.get_book_artifact_catalog(book_id)
         except FileNotFoundError as e:
@@ -168,6 +185,7 @@ def create_app() -> FastAPI:
 
     @app.get("/api/books/{book_id}/artifacts/{artifact_name}")
     async def get_book_artifact(book_id: str, artifact_name: str, full: bool = False, limit: int = 20):
+        book_id = _normalize_book_id(book_id)
         try:
             return service.get_book_artifact(book_id, artifact_name, full=full, limit=limit)
         except FileNotFoundError as e:
@@ -175,27 +193,33 @@ def create_app() -> FastAPI:
 
     @app.get("/api/books/{book_id}/reader")
     async def reader_view(book_id: str, chapter: int | None = None):
+        book_id = _normalize_book_id(book_id)
         return service.get_reader_payload(book_id, chapter)
 
     @app.post("/api/books/{book_id}/ask")
     async def ask(book_id: str, payload: AskRequest):
+        book_id = _normalize_book_id(book_id)
         return service.ask(book_id, payload).model_dump()
 
     @app.post("/api/books/{book_id}/continue")
     async def continue_story(book_id: str, payload: ContinueRequest):
+        book_id = _normalize_book_id(book_id)
         return service.continue_story(book_id, payload).model_dump()
 
     @app.get("/api/books/{book_id}/canon")
     async def get_canon(book_id: str, chapter_start: int | None = None, chapter_end: int | None = None):
+        book_id = _normalize_book_id(book_id)
         scope = Scope(chapters=[chapter_start, chapter_end]) if chapter_start and chapter_end else Scope()
         return service.get_canon(book_id, scope)
 
     @app.put("/api/books/{book_id}/canon")
     async def update_canon(book_id: str, payload: CanonUpdateRequest):
+        book_id = _normalize_book_id(book_id)
         return service.update_canon(book_id, payload)
 
     @app.get("/api/books/{book_id}/timeline")
     async def get_timeline(book_id: str, chapter_start: int | None = None, chapter_end: int | None = None):
+        book_id = _normalize_book_id(book_id)
         scope = Scope(chapters=[chapter_start, chapter_end]) if chapter_start and chapter_end else Scope()
         return [item.model_dump() for item in service.get_timeline(book_id, scope)]
 
@@ -207,6 +231,7 @@ def create_app() -> FastAPI:
         center: str | None = None,
         limit: int = 18,
     ):
+        book_id = _normalize_book_id(book_id)
         scope = Scope(chapters=[chapter_start, chapter_end]) if chapter_start and chapter_end else Scope()
         return service.get_interactive_graph(book_id, scope, center=center, limit=limit)
 

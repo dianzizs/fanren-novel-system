@@ -255,7 +255,10 @@ class BookIndexRepository:
         # 构建并保存向量索引（如果提供了 embedding_provider）
         has_vector_index = False
         if self._embedding_provider is not None:
-            vectors_dir = book_dir / "vectors"
+            # 使用配置的向量存储目录（纯 ASCII 路径避免 FAISS 编码问题）
+            import hashlib
+            book_hash = hashlib.md5(book_id.encode()).hexdigest()[:12]
+            vectors_dir = self.config.vector_store_dir / book_hash
             vectors_dir.mkdir(parents=True, exist_ok=True)
             for name, docs in corpora.items():
                 if not docs:
@@ -312,9 +315,11 @@ class BookIndexRepository:
                 vectorizers[name] = payload["vectorizer"]
                 matrices[name] = payload["matrix"]
 
-        # 加载向量索引
+        # 加载向量索引（使用配置的向量存储目录）
         vector_stores: dict[str, "BaseVectorStore"] = {}
-        vectors_dir = book_dir / "vectors"
+        import hashlib
+        book_hash = hashlib.md5(book_id.encode()).hexdigest()[:12]
+        vectors_dir = self.config.vector_store_dir / book_hash
         if vectors_dir.exists() and vectors_dir.is_dir():
             for corpus_dir in vectors_dir.iterdir():
                 if not corpus_dir.is_dir():

@@ -798,7 +798,8 @@ input::placeholder {
     repeating-linear-gradient(90deg, transparent 0 39px, rgba(255, 255, 255, 0.04) 39px 40px);
 }
 
-#knowledge-graph-canvas {
+#knowledge-graph-canvas,
+#detail-knowledge-graph-canvas {
   position: relative;
   width: 100%;
   height: 500px;

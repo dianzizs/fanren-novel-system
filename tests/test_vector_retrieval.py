@@ -37,11 +37,12 @@ class MockEmbeddingProvider:
 
 def create_test_config(tmp_path: Path) -> AppConfig:
     """Create test configuration."""
+    data_dir = tmp_path / "data"
     return AppConfig(
         root_dir=tmp_path,
-        data_dir=tmp_path / "data",
-        runtime_dir=tmp_path / "data" / "runtime",
-        books_dir=tmp_path / "data" / "books",
+        data_dir=data_dir,
+        runtime_dir=data_dir / "runtime",
+        books_dir=data_dir / "books",
         default_book_id="test-book",
         default_book_title="Test Book",
         default_book_path=tmp_path / "test.txt",
@@ -55,6 +56,7 @@ def create_test_config(tmp_path: Path) -> AppConfig:
         local_embedding_batch_size=32,
         local_embedding_normalize=True,
         local_embedding_cache_dir=tmp_path / "cache",
+        vector_store_dir=data_dir / "vectors",
         trace_enabled=False,
         trace_log_level="INFO",
     )
@@ -275,6 +277,8 @@ def test_dense_search_method():
 
 def test_vector_index_persistence():
     """Test vector index persistence to disk."""
+    import hashlib
+
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
         config = create_test_config(tmp_path)
@@ -290,9 +294,9 @@ def test_vector_index_persistence():
         # Build index
         repo.build_from_txt("test-book", "Test Book", book_file)
 
-        # Verify vector files exist
-        book_dir = config.books_dir / "test-book"
-        vectors_dir = book_dir / "vectors"
+        # Verify vector files exist (using hashed path to avoid encoding issues)
+        book_hash = hashlib.md5("test-book".encode()).hexdigest()[:12]
+        vectors_dir = config.vector_store_dir / book_hash
         assert vectors_dir.exists()
 
         # Check at least one corpus has vector files

@@ -5,6 +5,7 @@ import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+from urllib.parse import quote
 
 from fastapi.testclient import TestClient
 
@@ -60,6 +61,7 @@ class BookImportArtifactsTest(unittest.TestCase):
             local_embedding_batch_size=32,
             local_embedding_normalize=True,
             local_embedding_cache_dir=self.runtime_dir / "models",
+            vector_store_dir=self.data_dir / "vectors",
             trace_enabled=True,
             trace_log_level="INFO",
         )
@@ -143,6 +145,19 @@ class BookImportArtifactsTest(unittest.TestCase):
         self.assertEqual(preview["total_count"], 3)
         self.assertFalse(preview["truncated"])
         self.assertEqual(preview["content"][0]["chapter"], 1)
+
+    def test_double_encoded_book_id_still_resolves_artifacts(self) -> None:
+        manifest = self.upload_book("凡人修仙传(1-500章).txt", sample_book(2))
+        book_id = manifest["id"]
+        self.wait_until_ready(book_id)
+
+        double_encoded_id = quote(quote(book_id, safe=""), safe="")
+        catalog_response = self.client.get(f"/api/books/{double_encoded_id}/artifacts")
+        self.assertEqual(catalog_response.status_code, 200, catalog_response.text)
+
+        status_response = self.client.get(f"/api/books/{double_encoded_id}/status")
+        self.assertEqual(status_response.status_code, 200, status_response.text)
+        self.assertEqual(status_response.json()["book_id"], book_id)
 
 
 if __name__ == "__main__":

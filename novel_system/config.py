@@ -42,6 +42,8 @@ class AppConfig:
     local_embedding_batch_size: int
     local_embedding_normalize: bool
     local_embedding_cache_dir: Path
+    # 向量存储目录（避免中文路径问题）
+    vector_store_dir: Path
     # Tracing 配置
     trace_enabled: bool
     trace_log_level: str
@@ -86,6 +88,10 @@ class AppConfig:
             local_embedding_normalize=os.getenv("LOCAL_EMBEDDING_NORMALIZE", "true").lower() == "true",
             local_embedding_cache_dir=Path(
                 os.getenv("LOCAL_EMBEDDING_CACHE_DIR", str(runtime_dir / "models"))
+            ),
+            # 向量存储目录（避免中文路径问题）
+            vector_store_dir=Path(
+                os.getenv("VECTOR_STORE_DIR", str(data_dir / "vectors"))
             ),
             # Tracing 配置
             trace_enabled=os.getenv("TRACE_ENABLED", "true").lower() == "true",

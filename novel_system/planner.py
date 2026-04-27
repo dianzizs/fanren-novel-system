@@ -55,6 +55,16 @@ RECENT_TOPIC_RES = [
     (re.compile(r"那个(人|老头)"), "墨大夫"),
 ]
 
+# 语义扩展：将模糊问题转换为具体关键词
+SEMANTIC_EXPANSIONS: list[tuple[re.Pattern, list[str]]] = [
+    # "干什么" -> 参加测试、入门、考验
+    (re.compile(r"(去|要|想).*干什么"), ["参加", "考验", "测试", "入门", "招收"]),
+    # "为什么去" -> 原因、目的
+    (re.compile(r"为什么去"), ["原因", "目的", "为了", "因为"]),
+    # "发生了什么" -> 事件、经过
+    (re.compile(r"发生了什么"), ["事件", "经过", "结果"]),
+]
+
 
 @dataclass
 class RewrittenQuery:
@@ -80,6 +90,13 @@ class QueryRewriter:
             if key in query:
                 expansions.append(f"{key}→{'、'.join(aliases)}")
                 parts.append(" ".join(aliases))
+
+        # 1.5) 语义扩展：将模糊问题转换为具体关键词
+        for pattern, keywords in SEMANTIC_EXPANSIONS:
+            if pattern.search(query):
+                expanded = " ".join(keywords)
+                expansions.append(f"语义扩展→{expanded}")
+                parts.append(expanded)
 
         # 2) 指代消解（从最近对话历史中推断代词指向）
         recent_context = self._extract_recent_context(history)

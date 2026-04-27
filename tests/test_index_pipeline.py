@@ -6,11 +6,12 @@ from novel_system.indexing import BookIndexRepository
 
 
 def test_repository_reads_new_artifact_names(tmp_path: Path):
+    data_dir = tmp_path / "data"
     config = AppConfig(
         root_dir=tmp_path,
-        data_dir=tmp_path / "data",
-        runtime_dir=tmp_path / "data" / "runtime",
-        books_dir=tmp_path / "data" / "books",
+        data_dir=data_dir,
+        runtime_dir=data_dir / "runtime",
+        books_dir=data_dir / "books",
         default_book_id="default-book",
         default_book_title="Default",
         default_book_path=tmp_path / "default.txt",
@@ -24,6 +25,7 @@ def test_repository_reads_new_artifact_names(tmp_path: Path):
         local_embedding_batch_size=32,
         local_embedding_normalize=True,
         local_embedding_cache_dir=tmp_path / "cache",
+        vector_store_dir=data_dir / "vectors",
         trace_enabled=False,
         trace_log_level="INFO",
     )

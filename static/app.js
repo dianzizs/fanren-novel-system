@@ -192,6 +192,13 @@ function activateTab(nextButton) {
   });
 
   if (nextButton.dataset.tab === "knowledge") {
+    // Wait for DOM to update before calculating canvas size (hidden attribute was just removed)
+    requestAnimationFrame(() => {
+      resizeGraphCanvas();
+      if (graphState.nodes.length > 0) {
+        drawGraph();
+      }
+    });
     loadGraph().catch((error) => handleActionError(error, "#graph-detail", "图谱加载失败"));
   }
 }
@@ -1085,7 +1092,13 @@ function initRouter() {
 function handleRouteChange() {
   const hash = window.location.hash || "#/";
   if (hash.startsWith("#/book/")) {
-    const bookId = hash.replace("#/book/", "");
+    const rawBookId = hash.replace("#/book/", "");
+    let bookId = rawBookId;
+    try {
+      bookId = decodeURIComponent(rawBookId);
+    } catch (error) {
+      console.warn("Failed to decode book id from hash:", rawBookId, error);
+    }
     router.currentView = "detail";
     router.currentBookId = bookId;
     showBookDetail(bookId);
