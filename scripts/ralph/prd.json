@@ -1,0 +1,143 @@
+{
+  "project": "小王一号",
+  "branchName": "ralph/vector-search-integration",
+  "description": "向量检索集成 - 将 FAISS 向量搜索集成到检索流程中，实现真正的混合检索",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "扩展 LoadedBookIndex 数据结构",
+      "description": "作为开发者，需要在索引数据结构中添加向量存储字段，为后续向量检索提供存储基础。",
+      "acceptanceCriteria": [
+        "在 LoadedBookIndex dataclass 中添加 vector_stores: dict[str, BaseVectorStore] 字段",
+        "更新 indexing.py 中的 load() 方法初始化 vector_stores 为空字典",
+        "确保现有 TF-IDF 加载逻辑不受影响",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "创建向量索引构建函数",
+      "description": "作为开发者，需要一个函数在索引构建时为每个 corpus 生成 FAISS 向量索引。",
+      "acceptanceCriteria": [
+        "在 indexing.py 中创建 _build_faiss_index() 函数",
+        "函数接收 docs 列表和 embedding_provider，返回 FAISSVectorStore",
+        "使用 docs 的 'id' 和 'text' 字段构建索引",
+        "处理空文档列表的情况（返回 None）",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "集成向量索引到 build_from_txt",
+      "description": "作为开发者，需要在 build_from_txt() 中调用向量索引构建，并持久化到磁盘。",
+      "acceptanceCriteria": [
+        "BookIndexRepository.__init__ 接收可选的 embedding_provider 参数",
+        "build_from_txt() 为每个 corpus 调用 _build_faiss_index()",
+        "向量索引保存到 <book_dir>/vectors/<corpus_name>/ 目录",
+        "manifest.json 记录 has_vector_index: true 字段",
+        "现有 TF-IDF 索引构建不受影响",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "实现向量索引加载逻辑",
+      "description": "作为开发者，需要在 load() 方法中从磁盘加载 FAISS 索引。",
+      "acceptanceCriteria": [
+        "load() 方法检查 <book_dir>/vectors/<corpus_name>/ 目录是否存在",
+        "存在则创建 FAISSVectorStore 并调用 load()",
+        "vector_stores 字典填充已加载的向量存储",
+        "加载失败时记录警告日志但不抛出异常（降级到 TF-IDF）",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "添加向量搜索方法到 SearchOrchestrator",
+      "description": "作为开发者，需要在 SearchOrchestrator 中添加向量搜索方法。",
+      "acceptanceCriteria": [
+        "在 orchestrator.py 中添加 _dense_search() 方法",
+        "方法接收 query_vector, vector_store, target, top_k 参数",
+        "返回格式与 _tfidf_search() 一致的 hits 列表",
+        "处理 vector_store 为 None 的情况（返回空列表）",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "集成向量搜索到 retrieve 方法",
+      "description": "作为开发者，需要在 retrieve() 方法中同时使用 TF-IDF 和向量搜索。",
+      "acceptanceCriteria": [
+        "retrieve() 方法接收可选的 query_embedding 参数",
+        "当 query_embedding 提供且 vector_store 存在时，调用 _dense_search()",
+        "TF-IDF 和向量搜索结果合并（相同文档取最高分）",
+        "结果排序和去重逻辑保持不变",
+        "无向量索引时降级到纯 TF-IDF",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "更新 service.py 传递 query embedding",
+      "description": "作为开发者，需要在服务层计算 query embedding 并传递给检索层。",
+      "acceptanceCriteria": [
+        "NovelSystemService 初始化时创建 embedding_provider（已存在，确认可用）",
+        "ask() 方法调用 embedding_provider.embed([query]) 获取 query_embedding",
+        "query_embedding 传递给 HybridRetriever.retrieve()",
+        "处理 embedding 计算失败的情况（降级到纯 TF-IDF）",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "添加向量检索集成测试",
+      "description": "作为开发者，需要验证向量检索端到端流程正常工作。",
+      "acceptanceCriteria": [
+        "创建 tests/test_vector_retrieval.py 测试文件",
+        "测试向量索引构建和加载",
+        "测试 TF-IDF + 向量混合检索",
+        "测试向量索引不可用时的降级逻辑",
+        "conda run -n chaishu python -m pytest tests/test_vector_retrieval.py -v 通过",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-009",
+      "title": "更新模块文档",
+      "description": "作为开发者，需要更新文档反映向量检索功能。",
+      "acceptanceCriteria": [
+        "更新 docs/baseline/modules.md 说明向量检索模块",
+        "更新 docs/baseline/config.md 说明 EMBEDDING_PROVIDER 用途",
+        "向量检索相关的环境变量说明完整",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

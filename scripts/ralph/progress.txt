@@ -1,0 +1,12 @@
+# Ralph Progress Log
+Started: Mon Apr 28 10:00:00 2026
+
+## Codebase Patterns
+- Use `conda run -n chaishu` for all Python commands
+- novel_system/ is the core module, api.py is the entry point
+- Tests are in tests/ directory, run with pytest
+- retrieval.py delegates to search/orchestrator.py
+- vector_store/ contains FAISSVectorStore (not yet integrated)
+- embedding/ contains LocalOpenVINOEmbeddingProvider and LocalCudaEmbeddingProvider
+
+---

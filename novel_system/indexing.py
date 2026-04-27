@@ -8,13 +8,16 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 import jieba
 
 from .config import AppConfig
+
+if TYPE_CHECKING:
+    from .vector_store.base import BaseVectorStore
 
 
 CHAPTER_RE = re.compile(r"^第\s*(\d+)\s*章\s+(.+)$", re.MULTILINE)
@@ -105,6 +108,7 @@ class LoadedBookIndex:
     corpora: dict[str, list[dict[str, Any]]]
     vectorizers: dict[str, TfidfVectorizer]
     matrices: dict[str, Any]
+    vector_stores: dict[str, "BaseVectorStore"]
 
 
 class BookIndexRepository:
@@ -283,6 +287,7 @@ class BookIndexRepository:
             corpora=corpora,
             vectorizers=vectorizers,
             matrices=matrices,
+            vector_stores={},
         )
         self._cache[book_id] = loaded
         return loaded
