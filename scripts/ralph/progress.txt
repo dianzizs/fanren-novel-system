@@ -1,5 +1,5 @@
 # Ralph Progress Log
-Started: Mon Apr 28 10:00:00 2026
+Started: Tue Apr 28 02:16:36     2026
 
 ## Codebase Patterns
 - Use `conda run -n chaishu` for all Python commands
@@ -9,6 +9,38 @@ Started: Mon Apr 28 10:00:00 2026
 - vector_store/ contains FAISSVectorStore (not yet integrated)
 - embedding/ contains LocalOpenVINOEmbeddingProvider and LocalCudaEmbeddingProvider
 
+---
+
+## [Mon Apr 28 10:20:00 2026] - US-003
+- 修改 BookIndexRepository.__init__ 接收可选的 embedding_provider 参数
+- build_from_txt() 为每个 corpus 调用 _build_faiss_index() 构建向量索引
+- 向量索引保存到 <book_dir>/vectors/<corpus_name>/ 目录
+- manifest.json 记录 has_vector_index: true 字段
+- 现有 TF-IDF 索引构建逻辑保持不变
+- Files changed:
+  - novel_system/indexing.py (modified __init__ and build_from_txt)
+  - scripts/ralph/prd.json (updated US-003 passes)
+  - scripts/ralph/progress.txt (this update)
+- **Learnings for future iterations:**
+  - FAISSVectorStore.save() 创建目录并保存 index.faiss 和 metadata.json
+  - 向量索引构建是可选的，依赖 embedding_provider 是否提供
+  - 需要处理每个 corpus 的向量索引构建异常，不影响其他 corpus
+---
+
+## [Mon Apr 28 10:15:00 2026] - US-002
+- Created _build_faiss_index() function in indexing.py
+- Function accepts docs list and embedding_provider, returns FAISSVectorStore
+- Uses docs 'id' and 'text' fields for indexing
+- Handles empty doc list case (returns None)
+- Added logging import and logger instance
+- Files changed:
+  - novel_system/indexing.py (added _build_faiss_index function)
+  - scripts/ralph/prd.json (updated US-002 passes)
+  - scripts/ralph/progress.txt (this update)
+- **Learnings for future iterations:**
+  - FAISSVectorStore uses inner product (IP) metric by default
+  - embedding_provider.embed() returns list of vectors
+  - Need to handle embedding computation failures gracefully
 ---
 
 ## [Mon Apr 28 10:10:00 2026] - US-001
