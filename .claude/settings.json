@@ -7,7 +7,8 @@
       "Bash(findstr /I \"python uvicorn\")",
       "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('Nodes:', len\\(d.get\\('nodes',[]\\)\\), 'Edges:', len\\(d.get\\('edges',[]\\)\\), 'Stats:', d.get\\('stats'\\)\\)\")",
       "Bash(ls -la \"-\")",
-      "Bash(echo \"File check result: $?\")"
+      "Bash(echo \"File check result: $?\")",
+      "Bash(findstr -i ralph)"
     ]
   },
   "hooks": {
