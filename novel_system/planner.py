@@ -315,6 +315,11 @@ class RuleBasedPlanner:
             if "recent_plot" not in retrieval_targets:
                 retrieval_targets.append("recent_plot")
 
+        # 技能/功法获取类问题需要 chapter_chunks
+        if any(keyword in query for keyword in ("学会", "练成", "修成", "习得", "掌握")):
+            if "chapter_chunks" not in retrieval_targets:
+                retrieval_targets.append("chapter_chunks")
+
         if multimodal:
             retrieval_targets = ["vision_parse", *retrieval_targets]
 

@@ -54,10 +54,17 @@ class SearchOrchestrator:
         """
         hits: list[dict[str, Any]] = []
         for target in targets:
-            docs = list(book_index.corpora.get(target, []))
+            all_docs = list(book_index.corpora.get(target, []))
+            doc_pairs = list(enumerate(all_docs))
             # Filter by chapter scope
             if chapter_scope:
-                docs = [doc for doc in docs if self._in_scope(doc, chapter_scope)]
+                doc_pairs = [
+                    (index, doc)
+                    for index, doc in doc_pairs
+                    if self._in_scope(doc, chapter_scope)
+                ]
+            docs = [doc for _, doc in doc_pairs]
+            doc_indices = [index for index, _ in doc_pairs]
 
             # 特殊处理：character_card 精确别名匹配
             if target == "character_card":
@@ -73,6 +80,7 @@ class SearchOrchestrator:
                         vector_store=vector_store,
                         target=target,
                         top_k=top_k,
+                        chapter_scope=chapter_scope,
                     )
                     hits.extend(dense_hits)
 
@@ -81,18 +89,91 @@ class SearchOrchestrator:
             matrix = book_index.matrices.get(target)
 
             if vectorizer is not None and matrix is not None:
-                tfidf_hits = self._tfidf_search(query, docs, vectorizer, matrix, target, top_k)
+                tfidf_hits = self._tfidf_search(
+                    query,
+                    docs,
+                    vectorizer,
+                    matrix,
+                    target,
+                    top_k,
+                    doc_indices=doc_indices,
+                )
                 hits.extend(tfidf_hits)
             else:
                 # 回退到字符级匹配
                 hits.extend(self._sparse_fallback(query, docs, target))
 
         deduped = self._dedupe_candidates(hits)
+
+        # 混合检索重排序：
+        # 1. 提取查询中的关键名词（用于关键词验证）
+        # 2. 对向量搜索结果进行关键词匹配度加分
+        key_terms = self._extract_key_terms(query)
+        logger.debug(f"Key terms extracted from query: {key_terms}")
+        if key_terms:
+            # 计算每个关键词的重要性权重
+            # 常见词（人名等）权重低，专有名词（技能名等）权重高
+            term_weights = {}
+            for term in key_terms:
+                # 检测是否为技能/功法名（通常包含"术"、"决"、"功"、"法"等）
+                if any(suffix in term for suffix in ["术", "决", "功", "法", "丹", "符", "剑", "阵"]):
+                    term_weights[term] = 3.0  # 技能名权重高
+                elif term in ["韩立", "张铁", "墨大夫", "三叔"]:  # 常见人名
+                    term_weights[term] = 0.5  # 人名权重低
+                else:
+                    term_weights[term] = 1.0  # 默认权重
+
+            for item in deduped:
+                doc_text = item.get("document", {}).get("text", "")
+                # 计算加权关键词覆盖率
+                total_weight = sum(term_weights.values())
+                matched_weight = sum(term_weights.get(term, 1.0) for term in key_terms if term in doc_text)
+                coverage = matched_weight / total_weight if total_weight > 0 else 0
+
+                # 如果关键词覆盖率高，提升分数
+                if coverage > 0:
+                    original_score = item["score"]
+                    # 向量分数 * (1 + 覆盖率加成)
+                    item["score"] = item["score"] * (1 + coverage * 0.5)
+                    matched_terms = [term for term in key_terms if term in doc_text]
+                    logger.debug(f"Score boost: chapter={item['document'].get('chapter')}, coverage={coverage:.2f}, matched={matched_terms}, {original_score:.4f} -> {item['score']:.4f}")
+
         deduped.sort(key=lambda item: item["score"], reverse=True)
         return [
             Hit(target=item["target"], document=item["document"], score=item["score"])
             for item in deduped[:top_k]
         ]
+
+    def _extract_key_terms(self, query: str) -> list[str]:
+        """从查询中提取关键名词术语。
+
+        使用 jieba 分词提取有意义的名词。
+        """
+        import re
+        import jieba
+        import jieba.posseg as pseg
+
+        terms = []
+
+        # 提取引号内的词（精确匹配）
+        quoted = re.findall(r'[「」『』"\'"]([^「」『』"\']+)[「」『』"\'"]', query)
+        terms.extend(quoted)
+
+        # 使用 jieba 分词提取名词
+        words = pseg.cut(query)
+        stopwords = {"什么", "时候", "是", "在", "的", "了", "吗", "呢", "啊", "怎么", "如何", "为什么", "谁", "哪", "哪里", "怎样"}
+
+        for word, flag in words:
+            # 提取名词、动词（技能相关）、人名
+            if len(word) >= 2 and word not in stopwords:
+                # n: 名词, nr: 人名, ns: 地名, nt: 机构名, nz: 其他专名
+                # v: 动词, vn: 名动词
+                # l: 习用语, i: 成语
+                if flag.startswith(('n', 'v', 'l', 'i')) or flag == 'nz':
+                    terms.append(word)
+
+        # 去重并返回
+        return list(dict.fromkeys(terms))
 
     def _in_scope(self, doc: dict[str, Any], chapter_scope: list[int]) -> bool:
         """Check if document is within chapter scope."""
@@ -133,6 +214,7 @@ class SearchOrchestrator:
         matrix: Any,
         target: str,
         top_k: int,
+        doc_indices: list[int] | None = None,
     ) -> list[dict[str, Any]]:
         """使用 TF-IDF 进行检索。
 
@@ -143,6 +225,7 @@ class SearchOrchestrator:
             matrix: TF-IDF 矩阵
             target: 检索目标名称
             top_k: 返回数量
+            doc_indices: docs 对应的原始 matrix 行号
 
         Returns:
             命中结果列表
@@ -152,16 +235,25 @@ class SearchOrchestrator:
 
         query_vec = vectorizer.transform([query])
         scores = (matrix @ query_vec.T).toarray().ravel()
-        top_indices = scores.argsort()[-top_k:][::-1]
+        candidate_indices = doc_indices or list(range(len(docs)))
+        ranked = sorted(
+            (
+                (doc_pos, matrix_index, float(scores[matrix_index]))
+                for doc_pos, matrix_index in enumerate(candidate_indices)
+                if matrix_index < len(scores)
+            ),
+            key=lambda item: item[2],
+            reverse=True,
+        )[:top_k]
 
         hits = []
-        for idx in top_indices:
-            if scores[idx] > 0 and idx < len(docs):
+        for doc_pos, _matrix_index, score in ranked:
+            if score > 0 and doc_pos < len(docs):
                 hits.append({
                     "target": target,
-                    "document_id": docs[idx].get("id", f"doc-{idx}"),
-                    "document": docs[idx],
-                    "score": float(scores[idx]),
+                    "document_id": docs[doc_pos].get("id", f"doc-{doc_pos}"),
+                    "document": docs[doc_pos],
+                    "score": score,
                 })
         return hits
 
@@ -171,6 +263,7 @@ class SearchOrchestrator:
         vector_store: "BaseVectorStore | None",
         target: str,
         top_k: int,
+        chapter_scope: list[int] | None = None,
     ) -> list[dict[str, Any]]:
         """使用向量搜索进行检索。
 
@@ -179,6 +272,7 @@ class SearchOrchestrator:
             vector_store: 向量存储实例
             target: 检索目标名称
             top_k: 返回数量
+            chapter_scope: 章节范围过滤
 
         Returns:
             命中结果列表
@@ -187,19 +281,24 @@ class SearchOrchestrator:
             return []
 
         try:
-            results = vector_store.search(query_vector, top_k=top_k)
+            search_k = top_k * 10 if chapter_scope else top_k
+            results = vector_store.search(query_vector, top_k=search_k)
         except Exception as e:
             logger.warning(f"Vector search failed for target={target}: {e}")
             return []
 
         hits = []
         for result in results:
+            if chapter_scope and not self._in_scope(result.document, chapter_scope):
+                continue
             hits.append({
                 "target": target,
                 "document_id": result.id,
                 "document": result.document,
                 "score": result.score,
             })
+            if len(hits) >= top_k:
+                break
         return hits
 
     def _sparse_fallback(

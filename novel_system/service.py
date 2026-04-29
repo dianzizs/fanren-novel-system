@@ -1521,7 +1521,8 @@ class NovelSystemService:
                 self._record_token_usage(book_id, result.usage)
                 return result.content
             return result
-        except Exception:
+        except Exception as e:
+            logger.warning(f"LLM call failed for query '{query[:50]}...': {e}")
             return fallback
 
     def _execute_continuation_skill(
@@ -1661,11 +1662,44 @@ class NovelSystemService:
         return self._fallback_summary(hits)
 
     def _fallback_analysis(self, hits: list[RetrievalHit]) -> str:
-        return (
-            "更偏谨慎。韩立在发现瓶子后反复试探、保持保密、先观察再行动，说明他做事不冒进。"
-            if hits
-            else "当前范围内证据不足，无法稳妥分析。"
-        )
+        """基于检索结果生成分析答案，而不是硬编码。"""
+        if not hits:
+            return "当前范围内证据不足，无法稳妥分析。"
+
+        # 优先使用 character_card 类型的证据
+        character_hits = [h for h in hits if h.target == "character_card"]
+        if character_hits:
+            lead = character_hits[0]
+            name = lead.document.get("name", lead.document.get("title", "未知人物"))
+            text = lead.document.get("text", "")
+            aliases = lead.document.get("aliases", [])
+
+            # 尝试提取证据摘要部分
+            if "证据摘要：" in text:
+                # 提取证据摘要
+                parts = text.split("证据摘要：")
+                if len(parts) > 1:
+                    summary = parts[1].strip()
+                    # 提取第一句
+                    first_sentence = summary.split("。")[0] if "。" in summary else summary[:80]
+                    alias_str = f"（别名：{'、'.join(aliases[:2])}）" if aliases else ""
+                    return f"{name}{alias_str}：{self._trim_quote(first_sentence, 80)}。"
+
+            # 如果没有证据摘要，提取第一个有意义的句子
+            sentences = [s.strip() for s in text.split("。") if s.strip() and not s.strip().startswith(("相关章节", "首次出现"))]
+            if sentences:
+                return f"{name}：{self._trim_quote(sentences[0], 80)}。"
+
+            # 最后回退：使用基本信息
+            alias_str = f"（别名：{'、'.join(aliases[:2])}）" if aliases else ""
+            return f"{name}{alias_str}。"
+
+        # 没有 character_card，使用第一个 hit
+        lead = hits[0]
+        chapter = lead.document.get("chapter", 0)
+        text = lead.document.get("text", "")
+        first_sentence = text.split("。")[0] if "。" in text else text[:60]
+        return f"根据第{chapter}章，{self._trim_quote(first_sentence, 60)}"
 
     def _fallback_continuation(self, config: NovelConfig | None = None) -> str:
         """生成续写的 fallback 文本"""

@@ -65,6 +65,8 @@ class BookImportArtifactsTest(unittest.TestCase):
             trace_enabled=True,
             trace_log_level="INFO",
         )
+        self.embedding_patch = patch("novel_system.service.create_embedding_provider", return_value=None)
+        self.embedding_patch.start()
         self.service = NovelSystemService(self.config)
 
         self.config_patch = patch("novel_system.api.AppConfig.load", return_value=self.config)
@@ -77,6 +79,7 @@ class BookImportArtifactsTest(unittest.TestCase):
         self.client.close()
         self.service_patch.stop()
         self.config_patch.stop()
+        self.embedding_patch.stop()
         self.temp_dir.cleanup()
 
     def upload_book(self, filename: str, content: str):

@@ -51,6 +51,47 @@ class MockBookIndexWithTFIDF:
         return list(jieba.cut(text))
 
 
+class MockScopedBookIndexWithTFIDF:
+    """Mock index where the in-scope relevant row is not row 0 in the full matrix."""
+
+    def __init__(self):
+        self.corpora = {
+            "chapter_chunks": [
+                {
+                    "id": "ch1-noise",
+                    "chapter": 1,
+                    "text": "山边小村里炊烟升起，村民们正在闲谈。",
+                    "target": "chapter_chunks",
+                },
+                {
+                    "id": "ch2-target",
+                    "chapter": 2,
+                    "text": "韩立参加七玄门测试，是因为三叔推举并且内门待遇很好。",
+                    "target": "chapter_chunks",
+                },
+                {
+                    "id": "ch3-other",
+                    "chapter": 3,
+                    "text": "张铁在另一场考验中表现沉默。",
+                    "target": "chapter_chunks",
+                },
+            ],
+        }
+        texts = [doc["text"] for doc in self.corpora["chapter_chunks"]]
+        vectorizer = TfidfVectorizer(
+            tokenizer=self._tokenize,
+            lowercase=False,
+            min_df=1,
+        )
+        self.vectorizers = {"chapter_chunks": vectorizer}
+        self.matrices = {"chapter_chunks": vectorizer.fit_transform(texts)}
+        self.vector_stores = {}
+
+    def _tokenize(self, text: str) -> list[str]:
+        import jieba
+        return list(jieba.cut(text))
+
+
 def test_tfidf_search_returns_relevant_results():
     """TF-IDF 检索应返回相关文档。"""
     orchestrator = SearchOrchestrator()
@@ -117,6 +158,25 @@ def test_tfidf_search_respects_chapter_scope():
     # 所有结果应在第 1 章
     for hit in hits:
         assert hit.document.get("chapter") == 1
+
+
+def test_tfidf_search_keeps_matrix_rows_aligned_after_scope_filter():
+    """章节过滤后，TF-IDF 分数应映射回原始 corpus 的正确文档。"""
+    orchestrator = SearchOrchestrator()
+    index = MockScopedBookIndexWithTFIDF()
+
+    hits = orchestrator.retrieve(
+        book_index=index,
+        query="韩立为什么参加测试",
+        targets=["chapter_chunks"],
+        chapter_scope=[2],
+        top_k=3,
+    )
+
+    assert hits
+    assert hits[0].document["id"] == "ch2-target"
+    assert hits[0].document["chapter"] == 2
+    assert "三叔推举" in hits[0].document["text"]
 
 
 def test_tfidf_search_dedupe_results():

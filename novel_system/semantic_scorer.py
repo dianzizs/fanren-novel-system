@@ -184,11 +184,17 @@ class SemanticScorer:
             scores = []
             for hit in hits:
                 # 获取文本 embedding
-                chunk_id = getattr(hit, 'chunk_id', None)
+                document = getattr(hit, 'document', None)
+                if isinstance(hit, dict):
+                    document = hit.get("document", document)
+                chunk_id = (
+                    getattr(hit, 'chunk_id', None)
+                    or (document.get("id") if isinstance(document, dict) else None)
+                )
                 if chunk_id and self._cache:
                     text_emb = self.get_cached_embedding(chunk_id)
                 else:
-                    text = getattr(hit, 'text', None) or getattr(hit, 'content', '')
+                    text = self._extract_hit_text(hit, document)
                     text_emb = self.compute_embedding(text) if text else None
 
                 if text_emb:
@@ -227,6 +233,24 @@ class SemanticScorer:
                 severity="error",
             )
             return self._compute_lexical_score(hits), warning
+
+    def _extract_hit_text(self, hit: Any, document: Any = None) -> str:
+        """Extract evidence text from RetrievalHit, dict hit, or raw document."""
+        if isinstance(document, dict):
+            for field in ("text", "content", "quote", "description", "summary"):
+                value = document.get(field)
+                if isinstance(value, str) and value:
+                    return value
+        if isinstance(hit, dict):
+            for field in ("text", "content", "quote", "description", "summary"):
+                value = hit.get(field)
+                if isinstance(value, str) and value:
+                    return value
+        for field in ("text", "content", "quote", "description", "summary"):
+            value = getattr(hit, field, None)
+            if isinstance(value, str) and value:
+                return value
+        return ""
 
     def _cosine_similarity(self, a: list[float], b: list[float]) -> float:
         """计算余弦相似度"""

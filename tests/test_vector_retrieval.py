@@ -275,6 +275,50 @@ def test_dense_search_method():
     assert "score" in result[0]
 
 
+def test_dense_search_respects_chapter_scope():
+    """Dense retrieval must not return chapters outside the requested scope."""
+    orchestrator = SearchOrchestrator()
+    vector_store = FAISSVectorStore(dimension=3, metric="ip")
+
+    vector_store.add(
+        ids=["ch1", "ch2"],
+        vectors=[
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+        ],
+        documents=[
+            {"id": "ch1", "chapter": 1, "text": "第一章范围内的内容"},
+            {"id": "ch2", "chapter": 2, "text": "第二章范围外但向量更相似的内容"},
+        ],
+    )
+
+    class ScopedVectorIndex:
+        pass
+
+    index = ScopedVectorIndex()
+    index.corpora = {
+        "chapter_chunks": [
+            {"id": "ch1", "chapter": 1, "text": "第一章范围内的内容"},
+            {"id": "ch2", "chapter": 2, "text": "第二章范围外但向量更相似的内容"},
+        ]
+    }
+    index.vector_stores = {"chapter_chunks": vector_store}
+    index.vectorizers = {}
+    index.matrices = {}
+
+    hits = orchestrator.retrieve(
+        book_index=index,
+        query="第二章",
+        targets=["chapter_chunks"],
+        chapter_scope=[1],
+        top_k=2,
+        query_embedding=[0.0, 1.0, 0.0],
+    )
+
+    assert hits
+    assert all(hit.document["chapter"] == 1 for hit in hits)
+
+
 def test_vector_index_persistence():
     """Test vector index persistence to disk."""
     import hashlib

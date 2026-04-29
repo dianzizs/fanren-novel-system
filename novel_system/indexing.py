@@ -5,6 +5,7 @@ import logging
 import pickle
 import re
 import shutil
+import time
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime
@@ -131,8 +132,15 @@ class BookIndexRepository:
         if not self.config.books_dir.exists():
             return books
         for manifest_path in sorted(self.config.books_dir.glob("*/manifest.json")):
-            with manifest_path.open("r", encoding="utf-8") as handle:
-                books.append(json.load(handle))
+            for attempt in range(3):
+                try:
+                    with manifest_path.open("r", encoding="utf-8") as handle:
+                        books.append(json.load(handle))
+                    break
+                except json.JSONDecodeError:
+                    if attempt == 2:
+                        raise
+                    time.sleep(0.01)
         return books
 
     def remove_book(self, book_id: str) -> None:
