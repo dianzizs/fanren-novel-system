@@ -1,9 +1,31 @@
 from __future__ import annotations
 
-from .service_shared import *
+import json
+import logging
+from collections import defaultdict
+from pathlib import Path
+from typing import Any
+
+from .service import NovelSystemService
+from .models import Scope, CanonUpdateRequest, TimelineEvent
+from .indexing import scope_filter
+from .graph_name_policy import (
+    normalize_name_with_profile,
+    looks_like_graph_name as _looks_like_graph_name,
+    _build_graph_name_scores as _gnp_build_graph_name_scores,
+    _seed_graph_known_names,
+    _is_generic_graph_fragment,
+    GraphProfile,
+    build_profile_from_character_registry,
+    get_effective_seeds_and_aliases,
+    is_book_in_whitelist,
+    load_graph_profile,
+)
+
+logger = logging.getLogger(__name__)
 
 
-class GraphService:
+class GraphService(NovelSystemService):
     def get_canon(self, book_id: str, scope: Scope | None = None) -> dict[str, Any]:
         self.ensure_indexed(book_id)
         book_index = self.repo.load(book_id)
@@ -65,6 +87,13 @@ class GraphService:
             for index, doc in enumerate(book_index.corpora.get("event_timeline", []))
             if scope_filter(int(doc.get("chapter", 0)), scope.chapters)
         ]
+
+        # Log warning if key artifacts are missing
+        if not character_docs:
+            logger.warning(f"No character_card artifacts found for book {book_id}")
+        if not event_docs:
+            logger.warning(f"No event_timeline artifacts found for book {book_id}")
+
         if not character_docs or not event_docs:
             return {
                 "nodes": [],
@@ -75,13 +104,42 @@ class GraphService:
                 "stats": {"character_count": 0, "event_count": 0, "edge_count": 0},
             }
 
+        # Build GraphProfile with proper priority:
+        # 1. If book is whitelisted, load graph_profile.json
+        # 2. Merge with character_registry artifact if available
+        # 3. Fall back to empty profile
+        profile = None
+
+        if is_book_in_whitelist(book_id):
+            profile = load_graph_profile(book_id)
+            logger.info(f"Loaded graph_profile.json for whitelisted book {book_id}")
+
+        character_registry = book_index.corpora.get("character_registry", [])
+        if character_registry:
+            registry_profile = build_profile_from_character_registry(character_registry, book_id)
+            if profile is None:
+                profile = registry_profile
+            else:
+                # Merge: registry supplements explicit config
+                profile.character_seeds.update(registry_profile.character_seeds)
+                profile.aliases.update(registry_profile.aliases)
+            logger.debug(f"Character registry contributed {len(registry_profile.character_seeds)} seeds")
+        elif not character_registry:
+            logger.warning(f"No character_registry artifacts found for book {book_id}")
+
+        if profile is None:
+            logger.warning(f"No profile available for book {book_id}, using empty profile")
+            profile = GraphProfile.default(book_id)
+
+        seed_names = profile.character_seeds
+
         raw_scores = self._build_graph_name_scores(character_docs, event_docs)
-        known_names = self._seed_graph_known_names(raw_scores)
+        known_names = _seed_graph_known_names(raw_scores, profile)
 
         character_buckets: dict[str, list[dict[str, Any]]] = defaultdict(list)
         character_scores: dict[str, float] = defaultdict(float)
         for index, doc in character_docs:
-            canonical = self._canonicalize_graph_name(str(doc.get("name", "")), known_names)
+            canonical = self._canonicalize_graph_name(str(doc.get("name", "")), known_names, profile)
             if not canonical:
                 continue
             character_buckets[canonical].append({"index": index, "doc": doc})
@@ -94,7 +152,7 @@ class GraphService:
         for index, doc in event_docs:
             participants = []
             for name in doc.get("participants", []):
-                canonical = self._canonicalize_graph_name(str(name), known_names)
+                canonical = self._canonicalize_graph_name(str(name), known_names, profile)
                 if canonical and canonical not in participants:
                     participants.append(canonical)
                     character_scores[canonical] += 0.8
@@ -114,7 +172,7 @@ class GraphService:
                 if len(support["snippets"]) < 3 and event["description"]:
                     support["snippets"].append(event["description"])
 
-        center_name = self._canonicalize_graph_name(center or "", known_names) if center else None
+        center_name = self._canonicalize_graph_name(center or "", known_names, profile) if center else None
         center_affinity_scores: dict[str, float] = defaultdict(float)
         if center_name:
             for event in normalized_events:
@@ -131,7 +189,7 @@ class GraphService:
                 key=lambda item: (
                     item[1]
                     + center_affinity_scores.get(item[0], 0.0) * 2.2
-                    + (1.2 if item[0] in GRAPH_CANON_SEEDS else 0.0),
+                    + (1.2 if item[0] in seed_names else 0.0),
                     item[0],
                 ),
                 reverse=True,
@@ -141,14 +199,14 @@ class GraphService:
         if center_name and center_name not in available_characters:
             available_characters.insert(0, center_name)
 
-        character_query_scores = self._graph_character_query_scores(book_index, character_docs, known_names, center_name)
+        character_query_scores = self._graph_character_query_scores(book_index, character_docs, known_names, center_name, profile)
         ranked_characters = sorted(
             character_scores.items(),
             key=lambda item: (
                 item[1]
                 + character_query_scores.get(item[0], 0.0) * 6
                 + center_affinity_scores.get(item[0], 0.0) * 3.5
-                + (1.6 if item[0] in GRAPH_CANON_SEEDS else 0.0)
+                + (1.6 if item[0] in seed_names else 0.0)
                 + (5 if item[0] == center_name else 0)
             ),
             reverse=True,
@@ -185,7 +243,7 @@ class GraphService:
                 continue
             support = event_character_support.get(name)
             if support:
-                character_profiles[name] = self._build_event_backed_character_doc(name, support)
+                character_profiles[name] = self._build_event_backed_character_doc(name, support, profile)
 
         event_query_scores = self._graph_event_query_scores(book_index, event_docs, center_name)
         event_rankings: list[tuple[float, dict[str, Any]]] = []
@@ -324,108 +382,20 @@ class GraphService:
             return []
         return json.loads(path.read_text(encoding="utf-8"))
 
-    def _build_graph_name_scores(
-        self,
-        character_docs: list[tuple[int, dict[str, Any]]],
-        event_docs: list[tuple[int, dict[str, Any]]],
-    ) -> dict[str, float]:
-        scores: dict[str, float] = defaultdict(float)
-        for _, doc in character_docs:
-            scores[str(doc.get("name", ""))] += 1 + min(len(doc.get("chapters", [])) / 8, 3)
-        for _, doc in event_docs:
-            for participant in doc.get("participants", []):
-                scores[str(participant)] += 1.2
-        return scores
+    def _build_graph_name_scores(self, character_docs, event_docs):
+        return _gnp_build_graph_name_scores(character_docs, event_docs)
 
-    def _seed_graph_known_names(self, raw_scores: dict[str, float]) -> set[str]:
-        known = set(GRAPH_CANON_SEEDS)
-        known.update(ALIAS_MAP)
-        known.update(GRAPH_ALIAS_LOOKUP.values())
-        short_names: set[str] = set()
-        for name, score in raw_scores.items():
-            if score < 2 and name not in GRAPH_CANON_SEEDS:
-                continue
-            if any(name.endswith(suffix) for suffix in GRAPH_TITLE_SUFFIXES):
-                known.add(name)
-                continue
-            if len(name) == 2 and self._looks_like_graph_name(name):
-                short_names.add(name)
-                known.add(name)
-        for name, score in raw_scores.items():
-            if (score < 2 and name not in GRAPH_CANON_SEEDS) or name in known:
-                continue
-            if not self._looks_like_graph_name(name):
-                continue
-            if (
-                name not in GRAPH_CANON_SEEDS
-                and len(name) in {3, 4}
-                and any(name.startswith(base) or name.endswith(base) for base in short_names)
-            ):
-                continue
-            known.add(name)
-        return known
+    def _seed_graph_known_names(self, raw_scores, profile=None):
+        return _seed_graph_known_names(raw_scores, profile)
 
-    def _canonicalize_graph_name(self, raw_name: str, known_names: set[str]) -> str | None:
-        name = raw_name.strip()
-        if not name:
-            return None
-        if name in GRAPH_ALIAS_LOOKUP:
-            return GRAPH_ALIAS_LOOKUP[name]
-        if name in GRAPH_CANON_SEEDS or name in ALIAS_MAP:
-            return name
-        if name in known_names and self._looks_like_graph_name(name):
-            return name
+    def _canonicalize_graph_name(self, raw_name, known_names, profile=None):
+        return normalize_name_with_profile(raw_name, known_names, profile)
 
-        sorted_known = sorted(known_names, key=len, reverse=True)
-        for base in sorted_known:
-            if not base:
-                continue
-            if name == base:
-                return base
-            if name.startswith(base) and (
-                len(name) == len(base) + 1 or self._is_generic_graph_fragment(name[len(base) :])
-            ):
-                return base
-            if name.endswith(base) and (
-                len(name) == len(base) + 1 or self._is_generic_graph_fragment(name[: -len(base)])
-            ):
-                return base
+    def _looks_like_graph_name(self, name):
+        return _looks_like_graph_name(name)
 
-        if self._looks_like_graph_name(name):
-            return name
-        return None
-
-    def _looks_like_graph_name(self, name: str) -> bool:
-        if not name or name in GRAPH_GENERIC_NAMES:
-            return False
-        if any(fragment in name for fragment in GRAPH_GENERIC_SUBSTRINGS):
-            return False
-        if name in GRAPH_CANON_SEEDS or name in ALIAS_MAP or name in GRAPH_ALIAS_LOOKUP:
-            return True
-        if any(name.endswith(suffix) for suffix in GRAPH_TITLE_SUFFIXES):
-            return True
-        if len(name) < 2 or len(name) > 4:
-            return False
-        if self._is_generic_graph_fragment(name):
-            return False
-        if name[0] in GRAPH_BAD_START_CHARS:
-            return False
-        if name[0] not in COMMON_SURNAMES:
-            return False
-        if len(name) >= 3 and any(char in GRAPH_GENERIC_FRAGMENT_CHARS for char in name[1:-1]):
-            return False
-        if len(name) == 2 and name[1] in GRAPH_GENERIC_FRAGMENT_CHARS.union({"子", "氏", "们", "个"}):
-            return False
-        if name[-1] in GRAPH_BAD_END_CHARS:
-            return False
-        if name[-1] in GRAPH_GENERIC_FRAGMENT_CHARS:
-            return False
-        return True
-
-    def _is_generic_graph_fragment(self, fragment: str) -> bool:
-        if not fragment:
-            return True
-        return all(char in GRAPH_GENERIC_FRAGMENT_CHARS for char in fragment)
+    def _is_generic_graph_fragment(self, fragment):
+        return _is_generic_graph_fragment(fragment)
 
     def _select_representative_character_doc(self, bucket: list[dict[str, Any]]) -> dict[str, Any] | None:
         if not bucket:
@@ -439,7 +409,9 @@ class GraphService:
             ),
         )
 
-    def _build_event_backed_character_doc(self, name: str, support: dict[str, Any]) -> dict[str, Any]:
+    def _build_event_backed_character_doc(
+        self, name: str, support: dict[str, Any], profile: GraphProfile | None = None
+    ) -> dict[str, Any]:
         chapters = sorted(int(chapter) for chapter in support.get("chapters", set()))
         snippets = [
             self._trim_quote(str(text), 72)
@@ -449,12 +421,16 @@ class GraphService:
         summary = f"姓名：{name}；当前范围内主要通过事件共现出现。"
         if snippets:
             summary += f" 相关线索：{'；'.join(snippets[:2])}"
+        # Get aliases from profile, not global ALIAS_MAP
+        aliases = []
+        if profile and name in profile.character_seeds:
+            aliases = [alias for alias, canonical in profile.aliases.items() if canonical == name]
         return {
             "index": None,
             "chapter": chapters[0] if chapters else 0,
             "summary": self._trim_quote(summary, 180),
             "chapters": chapters[:12],
-            "aliases": ALIAS_MAP.get(name, []),
+            "aliases": aliases,
         }
 
     def _graph_character_query_scores(
@@ -463,6 +439,7 @@ class GraphService:
         character_docs: list[tuple[int, dict[str, Any]]],
         known_names: set[str],
         center_name: str | None,
+        profile: GraphProfile | None = None,
     ) -> dict[str, float]:
         if not center_name:
             return {}
@@ -474,7 +451,7 @@ class GraphService:
         raw_scores = (matrix @ query_vec.T).toarray().ravel()
         scores: dict[str, float] = defaultdict(float)
         for index, doc in character_docs:
-            canonical = self._canonicalize_graph_name(str(doc.get("name", "")), known_names)
+            canonical = self._canonicalize_graph_name(str(doc.get("name", "")), known_names, profile)
             if not canonical:
                 continue
             scores[canonical] = max(scores[canonical], float(raw_scores[index]))
@@ -514,4 +491,3 @@ class GraphService:
         if value is None:
             return None
         return round(1 - float(value), 4)
-
