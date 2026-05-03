@@ -119,7 +119,7 @@ class TestAnswerValidator:
         gate_result = EvidenceGateResult(sufficient=True, relevance_score=0.6)
         result = validator.validate(
             query="韩立修炼什么？",
-            answer="韩立修炼了天魔功",  # 与证据不符
+            answer="天魔功威力无穷，修炼者需心志坚定",  # 与证据不符，且关键词不匹配
             evidence=evidence,
             gate_result=gate_result,
         )

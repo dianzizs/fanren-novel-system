@@ -1,3 +1,14 @@
+"""数据模型定义。
+
+包含 API 请求/响应模型、内部数据结构、Trace 模型等。
+
+分类：
+- 请求模型：AskRequest, ContinueRequest, CanonUpdateRequest
+- 响应模型：AskResponse, ContinuationResponse
+- 检索模型：EvidenceItem, RetrievalHitTrace
+- Trace 模型：AskTrace, ContinuationTrace
+"""
+
 from __future__ import annotations
 
 from datetime import datetime

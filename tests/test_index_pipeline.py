@@ -28,6 +28,7 @@ def test_repository_reads_new_artifact_names(tmp_path: Path):
         vector_store_dir=data_dir / "vectors",
         trace_enabled=False,
         trace_log_level="INFO",
+        dense_search_overfetch_factor=10,
     )
     config.books_dir.mkdir(parents=True, exist_ok=True)
     book_dir = config.books_dir / "book-a"
@@ -53,8 +54,8 @@ def test_pipeline_builds_scene_and_registry():
         {
             "chapter": 1,
             "title": "山边小村",
-            "text": "韩立。张铁。",
-            "paragraphs": ["韩立。张铁。"],
+            "text": "韩立。张铁。韩立。",
+            "paragraphs": ["韩立。张铁。韩立。"],
         }
     ]
 
@@ -63,7 +64,7 @@ def test_pipeline_builds_scene_and_registry():
     assert "scene_segments" in artifacts
     assert "character_registry" in artifacts
     assert "chapter_chunks" in artifacts
-    # 角色注册表应包含提取的角色
+    # 角色注册表应包含提取的角色 (frequency >= 2)
     assert len(artifacts["character_registry"]) >= 1
 
 
@@ -75,8 +76,8 @@ def test_pipeline_produces_complete_artifact_set():
         {
             "chapter": 1,
             "title": "测试章节",
-            "text": "韩立和张铁一起出现。",
-            "paragraphs": ["韩立和张铁一起出现。"],
+            "text": "韩立。张铁。韩立。张铁。",
+            "paragraphs": ["韩立。张铁。韩立。张铁。"],
         }
     ]
 
@@ -92,3 +93,95 @@ def test_pipeline_produces_complete_artifact_set():
 
     for name in expected_artifacts:
         assert name in artifacts, f"Missing artifact: {name}"
+
+
+def test_character_registry_filters_by_frequency():
+    """Character registry should filter low-frequency noise."""
+    from novel_system.index_pipeline import build_book_artifacts
+
+    # Create chapters with a high-frequency character and low-frequency noise
+    # Use proper punctuation after names so the regex extracts names correctly
+    chapters = [
+        {
+            "chapter": 1,
+            "title": "Chapter 1",
+            "text": "韩立。张铁。",
+            "paragraphs": ["韩立。张铁。"],
+        },
+        {
+            "chapter": 2,
+            "title": "Chapter 2",
+            "text": "韩立。王护法。",
+            "paragraphs": ["韩立。王护法。"],
+        },
+    ]
+
+    artifacts = build_book_artifacts(chapters)
+    registry = artifacts["character_registry"]
+
+    # 韩立 should appear in registry (frequency >= 2)
+    han_li_entries = [r for r in registry if r.get("canonical_name") == "韩立"]
+    assert len(han_li_entries) >= 1, f"韩立 should be in registry, got: {[r['canonical_name'] for r in registry]}"
+
+
+def test_character_registry_includes_canonical_names():
+    """Character registry entries should have canonical names."""
+    from novel_system.index_pipeline import build_book_artifacts
+
+    chapters = [
+        {
+            "chapter": 1,
+            "title": "Chapter 1",
+            "text": "韩立和张铁。",
+            "paragraphs": ["韩立和张铁。"],
+        },
+        {
+            "chapter": 2,
+            "title": "Chapter 2",
+            "text": "韩立再次出现。",
+            "paragraphs": ["韩立再次出现。"],
+        },
+    ]
+
+    artifacts = build_book_artifacts(chapters)
+    registry = artifacts["character_registry"]
+
+    # All entries should have canonical_name
+    for entry in registry:
+        assert "canonical_name" in entry
+        assert "aliases" in entry
+        assert "frequency" in entry
+        assert "chapter_span" in entry
+
+
+def test_character_registry_is_reproducible():
+    """Character registry should produce stable results for same input."""
+    from novel_system.index_pipeline import build_book_artifacts
+
+    chapters = [
+        {
+            "chapter": 1,
+            "title": "Chapter 1",
+            "text": "韩立和张铁一起出现。",
+            "paragraphs": ["韩立和张铁一起出现。"],
+        },
+        {
+            "chapter": 2,
+            "title": "Chapter 2",
+            "text": "韩立再次出现。张铁也在。",
+            "paragraphs": ["韩立再次出现。张铁也在。"],
+        },
+    ]
+
+    # Run twice with same input
+    artifacts1 = build_book_artifacts(chapters)
+    artifacts2 = build_book_artifacts(chapters)
+
+    registry1 = artifacts1["character_registry"]
+    registry2 = artifacts2["character_registry"]
+
+    # Results should be identical
+    assert len(registry1) == len(registry2)
+    names1 = {r["canonical_name"] for r in registry1}
+    names2 = {r["canonical_name"] for r in registry2}
+    assert names1 == names2

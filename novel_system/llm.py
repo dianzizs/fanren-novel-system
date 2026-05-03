@@ -1,3 +1,12 @@
+"""LLM 客户端模块。
+
+封装 MiniMax API 调用，提供统一的对话接口。
+
+关键导出：
+- MiniMaxClient: MiniMax API 客户端
+- LLMResponse: 包含内容和 token 使用量的响应对象
+"""
+
 from __future__ import annotations
 
 import logging
@@ -16,13 +25,19 @@ THINK_TAG_RE = re.compile(r"<think>.*?</think>\s*", re.DOTALL | re.IGNORECASE)
 
 
 class LLMResponse:
-    """LLM chat response with optional token usage"""
+    """LLM 响应，包含生成内容和 token 使用量。"""
+
     def __init__(self, content: str, usage: dict[str, int] | None = None) -> None:
         self.content = content
         self.usage = usage or {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
 
 class MiniMaxClient:
+    """MiniMax API 客户端。
+
+    支持带重试的对话调用，自动处理 think 标签清理。
+    """
+
     # 重试配置
     MAX_RETRIES = 3
     RETRY_DELAYS = [1, 2, 4]  # 指数退避：1s, 2s, 4s
@@ -43,6 +58,19 @@ class MiniMaxClient:
         temperature: float = 0.2,
         max_tokens: int = 900,
     ) -> str | LLMResponse:
+        """调用 MiniMax chat API。
+
+        Args:
+            messages: 对话消息列表
+            temperature: 生成温度
+            max_tokens: 最大生成 token 数
+
+        Returns:
+            LLMResponse（含 token 使用量）或纯字符串
+
+        Raises:
+            RuntimeError: API 未配置时抛出
+        """
         if not self.enabled:
             raise RuntimeError("MINIMAX_API_KEY is not configured")
         response = requests.post(

@@ -13,6 +13,8 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
+
+import jieba
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Optional
 
@@ -25,6 +27,37 @@ if TYPE_CHECKING:
     from .semantic_scorer import SemanticScorer
 
 logger = logging.getLogger(__name__)
+
+# Common Chinese words that are NOT entities (question words, pronouns, function words, etc.)
+# Used to filter false positives from `re.findall(r'[一-龥]{2,4}', ...)` extractions.
+CHINESE_NON_ENTITY_WORDS: frozenset[str] = frozenset({
+    # Question words
+    "什么", "怎么", "为什么", "哪里", "哪儿", "哪个", "多少", "几时", "何时",
+    "怎样", "如何", "为何", "哪些", "谁",
+    # Pronouns
+    "我们", "你们", "他们", "她们", "它们", "咱们", "自己", "大家", "人家",
+    "别人", "他人", "某人", "本人",
+    # Demonstratives
+    "这个", "那个", "这些", "那些", "这样", "那样", "这边", "那边",
+    # Common verbs / auxiliaries
+    "不是", "没有", "可以", "知道", "应该", "能够", "可能", "已经", "正在",
+    "觉得", "认为", "希望", "需要", "愿意", "不会", "不能", "不要", "还是",
+    "就是", "不是", "来说", "成为", "以为", "属于",
+    # Common nouns / time words
+    "时候", "地方", "东西", "事情", "问题", "关系", "情况", "条件", "方面",
+    "部分", "一切", "所有", "任何", "每个", "各种",
+    # Adverbs / adjectives
+    "非常", "特别", "一直", "可能", "真的", "不过", "确实", "当然", "简直",
+    "几乎", "完全", "基本", "比较", "十分", "相当",
+    # Conjunctions / function words
+    "但是", "然而", "因为", "所以", "如果", "虽然", "而且", "或者", "以及",
+    "并且", "因此", "于是", "然后", "接着", "同时", "另外", "总之",
+})
+
+
+def _filter_non_entities(extracted: list[str]) -> list[str]:
+    """Filter out common non-entity Chinese words from regex-extracted tokens."""
+    return [w for w in extracted if w not in CHINESE_NON_ENTITY_WORDS]
 
 
 # === 数据模型 ===
@@ -342,11 +375,10 @@ class AnswerValidator:
 
     def _extract_keywords(self, text: str) -> list[str]:
         """提取文本中的关键词（人名、地名、事件名等）"""
-        # 使用正则提取中文词汇（2-4个字的词）
-        keywords = re.findall(r'[\u4e00-\u9fa5]{2,4}', text)
-        # 过滤停用词
-        stopwords = {"这个", "那个", "就是", "不是", "没有", "可以", "知道", "一个", "什么", "怎么"}
-        return [kw for kw in keywords if kw not in stopwords]
+        # 使用 jieba 分词提取有意义的词汇，避免正则贪婪匹配破坏词边界
+        words = [w for w in jieba.cut(text) if len(w) >= 2]
+        # 过滤非实体词（疑问词、代词、功能词等）
+        return _filter_non_entities(words)
 
     def _check_entity_consistency(
         self,
@@ -741,7 +773,7 @@ class ContinuationValidator:
             # 简单规则检查：如果规则包含"不能"、"禁止"等，检查续写是否违反
             if any(kw in rule_text for kw in ["不能", "禁止", "不可能", "无法"]):
                 # 提取规则中的关键实体
-                entities = re.findall(r'[\u4e00-\u9fa5]{2,4}', rule_text)
+                entities = _filter_non_entities(re.findall(r'[\u4e00-\u9fa5]{2,4}', rule_text))
                 for entity in entities:
                     if entity in continuation:
                         # 可能违反规则
@@ -926,7 +958,7 @@ class SpoilerGuard:
         """分割事件文本为关键词"""
         # 提取重要的词语
         parts = re.findall(r'[\u4e00-\u9fa5]{2,6}', text)
-        return [p for p in parts if len(p) >= 2]
+        return _filter_non_entities([p for p in parts if len(p) >= 2])
 
     def _detect_plot_twists(self, content: str) -> list[str]:
         """检测关键剧情关键词"""

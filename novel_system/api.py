@@ -1,3 +1,15 @@
+"""小说问答系统 API 层。
+
+提供 REST API 端点，包括书籍管理、问答、续写等功能。
+
+关键导出：
+- create_app: FastAPI 应用工厂函数
+- app: 默认应用实例
+
+依赖关系：
+- 调用 service 层执行业务逻辑
+"""
+
 from __future__ import annotations
 
 import re
@@ -37,15 +49,6 @@ def _sanitize_book_id(name: str) -> str:
     return cleaned[:60] if cleaned else name[:30]
 
 
-def _normalize_book_id(book_id: str) -> str:
-    """Decode already-escaped book ids from client-side hash routing."""
-    normalized = book_id
-    for _ in range(3):
-        decoded = unquote(normalized)
-        if decoded == normalized:
-            break
-        normalized = decoded
-    return normalized
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -57,7 +60,27 @@ from .models import AskRequest, CanonUpdateRequest, ContinueRequest, Scope
 from .service import NovelSystemService, create_service
 
 
+def _normalize_book_id(book_id: str) -> str:
+    """Decode already-escaped book ids from client-side hash routing."""
+    normalized = book_id
+    # Client-side hash routing may double- or triple-encode the book id
+    # (e.g. %2520 -> %20 -> ' '). Loop up to 3 times to fully decode.
+    for _ in range(3):
+        decoded = unquote(normalized)
+        if decoded == normalized:
+            break
+        normalized = decoded
+    return normalized
+
+
 def create_app() -> FastAPI:
+    """创建并配置 FastAPI 应用实例。
+
+    注册所有 API 端点、中间件和静态文件路由。
+
+    Returns:
+        配置完成的 FastAPI 应用
+    """
     config = AppConfig.load()
     service = create_service()
     app = FastAPI(title="Novel System Workspace", version="1.0.0")

@@ -1,3 +1,13 @@
+"""查询规划与重写模块。
+
+负责分析用户查询意图、规划检索策略、重写查询以提升召回率。
+
+关键导出：
+- RuleBasedPlanner: 基于规则的查询规划器
+- QueryRewriter: 查询重写器，扩展别名和指代
+- MemoryState: 会话记忆状态
+"""
+
 from __future__ import annotations
 
 import re
@@ -68,6 +78,11 @@ SEMANTIC_EXPANSIONS: list[tuple[re.Pattern, list[str]]] = [
 
 @dataclass
 class RewrittenQuery:
+    """重写后的查询结果。
+
+    包含原始查询、重写后的查询以及应用的扩展规则。
+    """
+
     original: str
     rewritten: str
     expansions: list[str]

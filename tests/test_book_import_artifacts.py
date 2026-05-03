@@ -64,6 +64,7 @@ class BookImportArtifactsTest(unittest.TestCase):
             vector_store_dir=self.data_dir / "vectors",
             trace_enabled=True,
             trace_log_level="INFO",
+            dense_search_overfetch_factor=10,
         )
         self.embedding_patch = patch("novel_system.service.create_embedding_provider", return_value=None)
         self.embedding_patch.start()

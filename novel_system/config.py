@@ -1,3 +1,12 @@
+"""应用配置模块。
+
+从环境变量加载配置，包括 LLM、Embedding、路径等设置。
+
+关键导出：
+- AppConfig: 应用配置类
+- ROOT_DIR: 项目根目录路径
+"""
+
 from __future__ import annotations
 
 import os
@@ -23,6 +32,11 @@ def _load_dotenv(dotenv_path: Path) -> None:
 
 @dataclass
 class AppConfig:
+    """应用配置，包含所有模块的配置项。
+
+    通过 load() 类方法从环境变量加载配置。
+    """
+
     root_dir: Path
     data_dir: Path
     runtime_dir: Path
@@ -47,9 +61,21 @@ class AppConfig:
     # Tracing 配置
     trace_enabled: bool
     trace_log_level: str
+    # Dense search 配置
+    dense_search_overfetch_factor: int
+    # Reranker 配置
+    rerank_enabled: bool = True
+    reranker_type: str = "rule_based"
 
     @classmethod
     def load(cls) -> "AppConfig":
+        """从环境变量加载配置。
+
+        优先读取 .env 文件，然后读取系统环境变量。
+
+        Returns:
+            配置完成的 AppConfig 实例
+        """
         _load_dotenv(ROOT_DIR / ".env")
         data_dir = ROOT_DIR / "data"
         runtime_dir = data_dir / "runtime"
@@ -96,5 +122,9 @@ class AppConfig:
             # Tracing 配置
             trace_enabled=os.getenv("TRACE_ENABLED", "true").lower() == "true",
             trace_log_level=os.getenv("TRACE_LOG_LEVEL", "INFO"),
+            # Dense search 配置
+            dense_search_overfetch_factor=int(os.getenv("DENSE_SEARCH_OVERFETCH_FACTOR", "10")),
+            # Reranker 配置
+            rerank_enabled=os.getenv("RERANK_ENABLED", "true").lower() == "true",
+            reranker_type=os.getenv("RERANKER_TYPE", "rule_based"),
         )
-
