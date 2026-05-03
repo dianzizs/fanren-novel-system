@@ -17,7 +17,11 @@
       "Bash(dir \"d:\\\\pythonProject\\\\小王一号\\\\小王一号\\\\data\\\\books\")",
       "Bash(EMBEDDING_PROVIDER=local_cuda LOCAL_EMBEDDING_DEVICE=cuda conda run -n chaishu python -c \"from novel_system.embedding.factory import create_embedding_provider; from novel_system.config import AppConfig; c = AppConfig.load\\(\\); print\\('Provider:', c.embedding_provider\\); p = create_embedding_provider\\(c\\); print\\(p.get_model_info\\(\\)\\)\")",
       "Bash(mv \".claude/ralph/prd.json\" \"scripts/ralph/prd.json\")",
-      "Bash(mv \".claude/ralph/progress.txt\" \"scripts/ralph/progress.txt\")"
+      "Bash(mv \".claude/ralph/progress.txt\" \"scripts/ralph/progress.txt\")",
+      "Edit(/.claude/skills/ralph/**)",
+      "Bash(wmic process *)",
+      "Bash(tmux list-sessions *)",
+      "Bash(bash ralph.sh 100)"
     ],
     "additionalDirectories": [
       "d:\\pythonProject\\小王一号\\小王一号\\.claude"
