@@ -1,0 +1,92 @@
+{
+  "project": "小王一号",
+  "branchName": "ralph/graph-name-policy-migration",
+  "description": "图谱人物命名策略迁移与可配置化 — 将硬编码命名规则迁移到书籍配置，建立统一命名策略模块",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "抽离统一人物命名策略模块",
+      "description": "As a backend developer, I want a single graph name policy module so that all graph-related naming/alias rules come from one place and never diverge.",
+      "acceptanceCriteria": [
+        "新增模块 novel_system/graph_name_policy.py，暴露规范化、别名归并、候选过滤接口",
+        "service.py 与 graph_service.py 中重复的人名规范化/过滤逻辑已删除，改为调用 graph_name_policy",
+        "conda run -n chaishu python -c \"from novel_system.graph_name_policy import normalize_name, resolve_aliases, filter_candidates\" 成功",
+        "现有相关测试通过"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "书籍级 graph 配置外置",
+      "description": "As a data/operator, I want per-book graph profile files so that novel-specific knowledge is managed as data instead of hardcoded patches.",
+      "acceptanceCriteria": [
+        "支持读取 books/{book_id}/graph_profile.json，schema 包含 character_seeds、aliases、manual_fixes 字段",
+        "GRAPH_CANON_SEEDS / GRAPH_ALIAS_LOOKUP 从代码常量迁出到 graph_profile.json 配置",
+        "配置缺失时回落到默认启发式，不因缺文件导致流程中断",
+        "新增测试验证配置加载、回退、schema 校验"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "索引阶段人物候选与过滤链路",
+      "description": "As a retrieval/graph engineer, I want candidate extraction and filtering in indexing so that fake names are filtered before graph consumption.",
+      "acceptanceCriteria": [
+        "索引阶段产出人物候选集合（从 chunk text 中抽取人名）",
+        "候选过滤基于三类证据：出现频率、章节跨度、场景证据",
+        "过滤后生成 character_registry，包含 canonical name + aliases",
+        "同配置下对同一输入数据过滤结果稳定（可重复性）",
+        "新增测试覆盖候选抽取和过滤链路"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Graph 消费面收敛到标准产物",
+      "description": "As a graph pipeline maintainer, I want graph only consume normalized artifacts so that upstream changes do not repeatedly break graph rules.",
+      "acceptanceCriteria": [
+        "graph 构建仅消费 character_registry、character_card、event_timeline 三类标准产物",
+        "graph 侧不再直接依赖原始名字补丁常量（如 GRAPH_CANON_SEEDS）",
+        "缺少关键产物时有明确日志或异常信号",
+        "现有图谱相关测试通过"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "白名单与新书自动判定",
+      "description": "As an operator, I want a whitelist policy with auto-detection for new books so that migration strategy is controllable and scalable.",
+      "acceptanceCriteria": [
+        "新增可配置白名单机制（配置文件或代码常量均可），用于特定策略启用/约束",
+        "系统自动判定新书是否在白名单中，按判定结果执行对应策略",
+        "白名单判定逻辑可测试：包含命中与未命中的样例测试",
+        "判定结果在日志或调试输出中可追踪"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "一次性切换与回归验证",
+      "description": "As a project owner, I want one-shot migration with strict verification so that architecture is cleaned up without long-term dual maintenance.",
+      "acceptanceCriteria": [
+        "不保留旧实现双轨逻辑（一次性切换）",
+        "新增迁移相关测试覆盖关键路径：配置加载回退、别名归并、候选过滤、白名单判定",
+        "conda run -n chaishu python -m pytest 通过",
+        "至少在一个样书上验证人物图谱效果：aliases 归并正确、假名过滤结果合理"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}
