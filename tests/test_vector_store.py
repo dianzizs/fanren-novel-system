@@ -134,6 +134,65 @@ class TestFAISSVectorStore:
         results = store.search([1, 0, 0, 0], top_k=10)
         assert results == []
 
+    def test_delete_then_search(self):
+        """测试删除后搜索不返回已删除项。"""
+        store = FAISSVectorStore(dimension=4, metric="ip")
+
+        ids = ["doc1", "doc2", "doc3"]
+        vectors = [[1, 0, 0, 0], [0, 1, 0, 0], [0.9, 0.1, 0, 0]]
+        docs = [{"text": "doc1"}, {"text": "doc2"}, {"text": "doc3"}]
+        store.add(ids, vectors, docs)
+
+        # 删除 doc1
+        deleted = store.delete(["doc1"])
+        assert deleted == 1
+        assert store.count() == 2
+
+        # 搜索应该不返回 doc1
+        results = store.search([1, 0, 0, 0], top_k=10)
+        result_ids = [r.id for r in results]
+        assert "doc1" not in result_ids
+        assert "doc2" in result_ids
+        assert "doc3" in result_ids
+        assert len(results) == 2
+
+    def test_delete_all_then_search(self):
+        """测试删除所有向量后搜索返回空。"""
+        store = FAISSVectorStore(dimension=4, metric="ip")
+
+        store.add(
+            ["doc1", "doc2"],
+            [[1, 0, 0, 0], [0, 1, 0, 0]],
+            [{"text": "doc1"}, {"text": "doc2"}],
+        )
+
+        store.delete(["doc1", "doc2"])
+        assert store.count() == 0
+
+        results = store.search([1, 0, 0, 0], top_k=10)
+        assert results == []
+
+    def test_delete_count_consistency(self):
+        """测试删除后 count() 与可搜索向量数一致。"""
+        store = FAISSVectorStore(dimension=4, metric="ip")
+
+        ids = [f"doc{i}" for i in range(10)]
+        vectors = [[1 if j == i else 0 for j in range(4)] for i in range(10)]
+        docs = [{"text": f"doc{i}"} for i in range(10)]
+        store.add(ids, vectors, docs)
+
+        # 删除部分
+        store.delete(["doc0", "doc3", "doc7"])
+        assert store.count() == 7
+
+        # 搜索并验证返回数量不超过 count()
+        results = store.search([1, 0, 0, 0], top_k=10)
+        assert len(results) == 7
+        result_ids = [r.id for r in results]
+        assert "doc0" not in result_ids
+        assert "doc3" not in result_ids
+        assert "doc7" not in result_ids
+
 
 class TestVectorSearchResult:
     """测试搜索结果数据类。"""

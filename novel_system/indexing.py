@@ -1,5 +1,19 @@
+"""书籍索引构建与管理模块。
+
+负责解析小说文本、构建各类索引制品（章节切片、人物卡、事件时间线等）。
+
+关键导出：
+- BookIndexRepository: 索引仓库管理类
+- LoadedBookIndex: 加载后的索引数据结构
+
+依赖关系：
+- 调用 vector_store 构建向量索引
+- 调用 embedding 生成文本向量
+"""
+
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import pickle
@@ -87,6 +101,34 @@ BAD_NAME_ENDINGS = set(
     "心一一不这也就听有也和自见看没还脸对大才等并望皱想说道做给比往走更被叫早已正用"
     "觉知该当从只已又如为何但却虽再向能需可应最都"
 )
+
+# Event sentence recognition patterns
+TIME_WORDS = frozenset({
+    "后来", "之后", "之前", "当时", "几天后", "数日后", "半月后", "一月后",
+    "这时候", "此时", "那时", "第二天", "次日", "当夜", "这天", "当日",
+    "过了许久", "没多久", "不久", "终于", "然后", "接着", "随后",
+})
+
+ACTION_VERBS = frozenset({
+    "发现", "决定", "选择", "杀死", "击杀", "获得", "得到", "遇到", "遇见",
+    "逃离", "逃脱", "到达", "抵达", "攻击", "出手", "突破", "修炼", "炼制",
+    "夺舍", "吞噬", "夺走", "抢走", "偷走", "救下", "救出", "抓住", "擒住",
+    "释放", "解除", "开启", "关闭", "激活", "触发", "识破", "看穿",
+    "答应", "拒绝", "同意", "提出", "宣布", "命令", "安排", "派遣",
+    "背叛", "反叛", "投降", "归顺", "结盟", "合作", "交易", "交换",
+})
+
+CAUSALITY_WORDS = frozenset({
+    "因为", "所以", "为了", "由于", "导致", "结果", "使得", "于是",
+    "因此", "因而", "故而", "以至于", "从而", "原来", "只因",
+})
+
+CHANGE_INDICATORS = frozenset({
+    "突然", "忽然", "猛然", "骤然", "竟", "竟然", "居然", "终于",
+    "立刻", "马上", "瞬间", "顿时", "霎时", "顷刻", "一时间",
+    "意外", "没想到", "出乎意料", "想不到",
+})
+
 RULE_PATTERNS = (
     "外门",
     "内门",
@@ -109,6 +151,11 @@ ALIAS_MAP = {
 
 @dataclass
 class LoadedBookIndex:
+    """加载后的书籍索引数据。
+
+    包含书籍的元数据、章节内容、各类索引制品和向量化数据。
+    """
+
     manifest: dict[str, Any]
     chapters: list[dict[str, Any]]
     corpora: dict[str, list[dict[str, Any]]]
@@ -118,6 +165,11 @@ class LoadedBookIndex:
 
 
 class BookIndexRepository:
+    """书籍索引仓库，管理索引的构建、加载和查询。
+
+    提供从原始文本构建索引、加载已构建索引、读取索引制品等功能。
+    """
+
     def __init__(
         self,
         config: AppConfig,
@@ -226,6 +278,7 @@ class BookIndexRepository:
         chapter_summaries = self._build_chapter_summaries(chapters)
         events = self._build_event_timeline(chapters, chapter_summaries)
         character_cards = self._build_character_cards(chapters)
+        character_registry = self._build_character_registry(chapters, character_cards)
         relationships = self._build_relationships(chapters, character_cards)
         world_rules = self._build_world_rules(chapters)
         canon_memory = self._build_canon_memory(chapter_summaries, events)
@@ -237,6 +290,7 @@ class BookIndexRepository:
             "chapter_summaries": chapter_summaries,
             "event_timeline": events,
             "character_card": character_cards,
+            "character_registry": character_registry,
             "relationship_graph": relationships,
             "world_rule": world_rules,
             "canon_memory": canon_memory,
@@ -261,26 +315,7 @@ class BookIndexRepository:
                 pickle.dump(payload, handle)
 
         # 构建并保存向量索引（如果提供了 embedding_provider）
-        has_vector_index = False
-        if self._embedding_provider is not None:
-            # 使用配置的向量存储目录（纯 ASCII 路径避免 FAISS 编码问题）
-            import hashlib
-            book_hash = hashlib.md5(book_id.encode()).hexdigest()[:12]
-            vectors_dir = self.config.vector_store_dir / book_hash
-            vectors_dir.mkdir(parents=True, exist_ok=True)
-            for name, docs in corpora.items():
-                if not docs:
-                    continue
-                try:
-                    vector_store = self._build_faiss_index(docs, self._embedding_provider)
-                    if vector_store is not None:
-                        corpus_vector_dir = vectors_dir / name
-                        corpus_vector_dir.mkdir(parents=True, exist_ok=True)
-                        vector_store.save(str(corpus_vector_dir))
-                        has_vector_index = True
-                        logger.info(f"Saved vector index for {name} to {corpus_vector_dir}")
-                except Exception as e:
-                    logger.warning(f"Failed to build vector index for {name}: {e}")
+        has_vector_index = self._build_vector_indexes(book_id, corpora)
 
         manifest = {
             "id": book_id,
@@ -325,7 +360,6 @@ class BookIndexRepository:
 
         # 加载向量索引（使用配置的向量存储目录）
         vector_stores: dict[str, "BaseVectorStore"] = {}
-        import hashlib
         book_hash = hashlib.md5(book_id.encode()).hexdigest()[:12]
         vectors_dir = self.config.vector_store_dir / book_hash
         if vectors_dir.exists() and vectors_dir.is_dir():
@@ -457,15 +491,31 @@ class BookIndexRepository:
         docs: list[dict[str, Any]] = []
         for chapter in chapters:
             sentences = self._split_sentences(chapter["text"])
-            picked = []
+            # Score sentences for event significance
+            scored = []
             for sentence in sentences:
                 compact = sentence.strip()
                 if len(compact) < 12:
                     continue
-                picked.append(compact)
-                if len(picked) >= 3:
+                score = self._score_event_sentence(compact)
+                scored.append((score, compact))
+
+            # Select top 3-5 sentences by score, prioritize higher scores
+            scored.sort(key=lambda x: x[0], reverse=True)
+            picked = []
+            total_len = 0
+            max_sentences = 5
+            max_total_len = 260
+
+            for score, sentence in scored:
+                if len(picked) >= max_sentences:
                     break
-            description = " ".join(picked)[:260] or summary_map.get(chapter["chapter"], "")
+                if total_len + len(sentence) + 1 > max_total_len:
+                    break
+                picked.append(sentence)
+                total_len += len(sentence) + 1
+
+            description = " ".join(picked) or summary_map.get(chapter["chapter"], "")
             participants = self._extract_person_names(chapter["text"])[:6]
             docs.append(
                 {
@@ -519,13 +569,129 @@ class BookIndexRepository:
                     "title": name,
                     "target": "character_card",
                     "text": profile[:420],
+                    "retrieval_text": profile[:420],  # 用于检索的文本字段
                     "name": name,
+                    "canonical_name": name,  # 用于精确别名匹配
                     "aliases": ALIAS_MAP.get(name, []),
                     "chapters": chapters_list,
                     "source": f"{name}人物卡",
                 }
             )
         return docs
+
+    def _build_character_registry(
+        self,
+        chapters: list[dict[str, Any]],
+        character_cards: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Build character registry with filtered candidates.
+
+        Filters candidates based on three evidence types:
+        - Frequency: how often the name appears
+        - Chapter span: how many chapters the name appears in
+        - Scene evidence: whether the name appears in event contexts
+
+        Args:
+            chapters: Parsed chapter data
+            character_cards: Pre-built character cards
+
+        Returns:
+            List of character registry entries with canonical names and aliases
+        """
+        from .graph_name_policy import (
+            GraphProfile,
+            load_graph_profile,
+            normalize_name_with_profile,
+            get_effective_seeds_and_aliases,
+        )
+
+        # Try to load profile (uses defaults if not found)
+        profile = load_graph_profile("", self.config.data_dir / "books")
+        canon_seeds, alias_lookup = get_effective_seeds_and_aliases(profile)
+
+        # Collect evidence for each candidate
+        name_evidence: dict[str, dict[str, Any]] = defaultdict(
+            lambda: {
+                "frequency": 0,
+                "chapters": set(),
+                "scene_count": 0,
+                "aliases": set(),
+            }
+        )
+
+        # Extract from chapters
+        for chapter in chapters:
+            text = chapter.get("text", "")
+            if not text:
+                continue
+            names = self._extract_person_names(text)
+            for name in names:
+                name_evidence[name]["frequency"] += 1
+                name_evidence[name]["chapters"].add(chapter["chapter"])
+
+        # Extract from character cards (scene evidence)
+        card_names = {card["name"] for card in character_cards}
+        for card in character_cards:
+            name = card["name"]
+            if name in name_evidence:
+                name_evidence[name]["scene_count"] += 1
+                # Add aliases from cards
+                for alias in card.get("aliases", []):
+                    name_evidence[name]["aliases"].add(alias)
+
+        # Add aliases from profile/config
+        for alias, canonical in alias_lookup.items():
+            if canonical in name_evidence:
+                name_evidence[canonical]["aliases"].add(alias)
+
+        # Filter candidates based on evidence
+        filtered_candidates: list[dict[str, Any]] = []
+        for name, evidence in name_evidence.items():
+            # Skip if frequency too low (noise filter)
+            if evidence["frequency"] < 2:
+                continue
+
+            # Normalize name using profile
+            normalized = normalize_name_with_profile(name, card_names, profile)
+            if not normalized:
+                continue
+
+            # Calculate composite score
+            chapter_span = len(evidence["chapters"])
+            score = (
+                evidence["frequency"] * 1.0 +
+                chapter_span * 2.0 +
+                evidence["scene_count"] * 1.5 +
+                (5.0 if name in canon_seeds else 0.0)
+            )
+
+            # Minimum threshold for inclusion
+            if score < 3.0 and name not in canon_seeds:
+                continue
+
+            filtered_candidates.append({
+                "id": f"reg-{name}",
+                "canonical_name": normalized,
+                "aliases": sorted(evidence["aliases"]),
+                "frequency": evidence["frequency"],
+                "chapter_span": chapter_span,
+                "chapters": sorted(evidence["chapters"]),
+                "scene_evidence": evidence["scene_count"] > 0,
+                "score": round(score, 2),
+                "is_seed": name in canon_seeds,
+                "text": f"{normalized} {' '.join(sorted(evidence['aliases']))} 章节{sorted(evidence['chapters'])[:5]}",
+            })
+
+        # Sort by score and deduplicate by canonical name
+        seen_canonical: set[str] = set()
+        registry: list[dict[str, Any]] = []
+        for candidate in sorted(filtered_candidates, key=lambda x: -x["score"]):
+            canonical = candidate["canonical_name"]
+            if canonical not in seen_canonical:
+                seen_canonical.add(canonical)
+                registry.append(candidate)
+
+        return registry[:200]  # Limit to top 200 characters
 
     def _build_relationships(
         self,
@@ -668,8 +834,8 @@ class BookIndexRepository:
 
     def _build_vector_payload(self, docs: list[dict[str, Any]]) -> dict[str, Any]:
         """构建词级 TF-IDF 向量。"""
-        texts = [doc["text"] for doc in docs]
-        if not texts:
+        texts = [doc.get("text", "") for doc in docs]
+        if not any(texts):
             return {"vectorizer": None, "matrix": None}
 
         # 词级 TF-IDF
@@ -729,6 +895,37 @@ class BookIndexRepository:
         logger.info(f"Built FAISS index with {len(ids)} vectors, dimension={dimension}")
         return vector_store
 
+    def _build_vector_indexes(self, book_id: str, corpora: dict[str, list[dict[str, Any]]]) -> bool:
+        """为所有 corpus 构建并保存 FAISS 向量索引。
+
+        Args:
+            book_id: 书籍 ID
+            corpora: 语料字典，key 为语料名，value 为文档列表
+
+        Returns:
+            是否有索引成功构建
+        """
+        has_vector_index = False
+        if self._embedding_provider is None:
+            return has_vector_index
+        book_hash = hashlib.md5(book_id.encode()).hexdigest()[:12]
+        vectors_dir = self.config.vector_store_dir / book_hash
+        vectors_dir.mkdir(parents=True, exist_ok=True)
+        for name, docs in corpora.items():
+            if not docs:
+                continue
+            try:
+                vector_store = self._build_faiss_index(docs, self._embedding_provider)
+                if vector_store is not None:
+                    corpus_vector_dir = vectors_dir / name
+                    corpus_vector_dir.mkdir(parents=True, exist_ok=True)
+                    vector_store.save(str(corpus_vector_dir))
+                    has_vector_index = True
+                    logger.info(f"Saved vector index for {name} to {corpus_vector_dir}")
+            except Exception as e:
+                logger.warning(f"Failed to build vector index for {name}: {e}")
+        return has_vector_index
+
     def _build_vector_payload_for_corpus(self, book_id: str, corpus_name: str, docs: list[dict[str, Any]]) -> None:
         """为单个 corpus 构建并保存向量索引（独立调用）"""
         book_dir = self._book_dir(book_id)
@@ -743,6 +940,48 @@ class BookIndexRepository:
 
     def _split_sentences(self, text: str) -> list[str]:
         return [match.group(0).strip() for match in SENTENCE_RE.finditer(text) if match.group(0).strip()]
+
+    def _score_event_sentence(self, sentence: str) -> float:
+        """Score a sentence for event significance.
+
+        Higher scores indicate more event-like sentences.
+        Factors: time words, action verbs, causality words, change indicators.
+        """
+        score = 0.0
+
+        # Time words indicate temporal progression (key for events)
+        for word in TIME_WORDS:
+            if word in sentence:
+                score += 2.0
+                break  # Only count once per category
+
+        # Action verbs are the core of events
+        for word in ACTION_VERBS:
+            if word in sentence:
+                score += 3.0
+                break
+
+        # Causality words indicate cause-effect relationships
+        for word in CAUSALITY_WORDS:
+            if word in sentence:
+                score += 1.5
+                break
+
+        # Change indicators show sudden/important changes
+        for word in CHANGE_INDICATORS:
+            if word in sentence:
+                score += 1.5
+                break
+
+        # Contains person name - events involve characters
+        if PERSON_RE.search(sentence):
+            score += 1.0
+
+        # Length bonus - very short sentences are usually not events
+        if len(sentence) >= 20:
+            score += 0.5
+
+        return score
 
     def _extract_person_names(self, text: str) -> list[str]:
         names = []

@@ -51,6 +51,7 @@ class FAISSVectorStore(BaseVectorStore):
         self._id_to_idx: dict[str, int] = {}
         self._idx_to_id: dict[int, str] = {}
         self._documents: dict[str, dict[str, Any]] = {}
+        self._deleted_indices: set[int] = set()
         self._next_idx: int = 0
 
         # GPU 资源
@@ -155,6 +156,10 @@ class FAISSVectorStore(BaseVectorStore):
             if idx < 0:
                 continue
 
+            # Skip deleted vectors
+            if idx in self._deleted_indices:
+                continue
+
             id_ = self._idx_to_id.get(idx)
             if id_ is None:
                 continue
@@ -181,8 +186,8 @@ class FAISSVectorStore(BaseVectorStore):
         """
         删除向量（标记删除）。
 
-        注意：FAISS 不支持真正的删除，此方法仅从映射中移除。
-        如需真正删除，需要重建索引。
+        FAISS 不支持真正的删除，此方法将索引标记为已删除。
+        当删除比例超过阈值时自动 compact。
         """
         count = 0
         for id_ in ids:
@@ -190,10 +195,16 @@ class FAISSVectorStore(BaseVectorStore):
                 idx = self._id_to_idx.pop(id_)
                 self._idx_to_id.pop(idx, None)
                 self._documents.pop(id_, None)
+                self._deleted_indices.add(idx)
                 count += 1
 
         if count > 0:
             logger.debug(f"Marked {count} vectors as deleted")
+            # Auto-compact when deletion ratio exceeds 50%
+            total = self._index.ntotal if self._index else 0
+            if total > 0 and len(self._deleted_indices) / total > 0.5:
+                logger.info("Deletion ratio > 50%, auto-compacting")
+                self.compact()
 
         return count
 
@@ -237,6 +248,7 @@ class FAISSVectorStore(BaseVectorStore):
             "id_to_idx": self._id_to_idx,
             "idx_to_id": {str(k): v for k, v in self._idx_to_id.items()},
             "documents": self._documents,
+            "deleted_indices": list(self._deleted_indices),
             "next_idx": self._next_idx,
         }
         with open(save_path / "metadata.json", "w", encoding="utf-8") as f:
@@ -273,6 +285,7 @@ class FAISSVectorStore(BaseVectorStore):
         self._id_to_idx = metadata["id_to_idx"]
         self._idx_to_id = {int(k): v for k, v in metadata["idx_to_id"].items()}
         self._documents = metadata["documents"]
+        self._deleted_indices = set(metadata.get("deleted_indices", []))
         self._next_idx = metadata["next_idx"]
 
         logger.info(f"Loaded FAISS index from {path}, count={self.count()}")
@@ -317,6 +330,7 @@ class FAISSVectorStore(BaseVectorStore):
         self._initialize_index()
         self._id_to_idx = {}
         self._idx_to_id = {}
+        self._deleted_indices = set()
         self._next_idx = 0
 
         # 重新添加

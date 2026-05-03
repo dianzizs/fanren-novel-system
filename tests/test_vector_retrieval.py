@@ -1,6 +1,7 @@
 """Tests for vector retrieval integration."""
 from __future__ import annotations
 
+import hashlib
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -26,8 +27,9 @@ class MockEmbeddingProvider:
         self._call_count += 1
         results = []
         for text in texts:
-            # Use hash to generate deterministic but varied vectors
-            np.random.seed(hash(text) % (2**31))
+            # Use hashlib for deterministic seeding (hash() is randomized per process)
+            seed = int(hashlib.md5(text.encode()).hexdigest(), 16) % (2**31)
+            np.random.seed(seed)
             vector = np.random.randn(self._dimension).astype(np.float32)
             # Normalize
             vector = vector / np.linalg.norm(vector)
@@ -59,6 +61,7 @@ def create_test_config(tmp_path: Path) -> AppConfig:
         vector_store_dir=data_dir / "vectors",
         trace_enabled=False,
         trace_log_level="INFO",
+        dense_search_overfetch_factor=10,
     )
 
 

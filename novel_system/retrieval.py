@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .reranker.base import BaseReranker
 from .search.orchestrator import SearchOrchestrator
 
 
@@ -27,9 +28,15 @@ class HybridRetriever:
     while using the new search orchestration internally.
     """
 
-    def __init__(self, book_index: Any) -> None:
+    def __init__(
+        self,
+        book_index: Any,
+        overfetch_factor: int = 10,
+        reranker: BaseReranker | None = None,
+    ) -> None:
         self.book_index = book_index
-        self.orchestrator = SearchOrchestrator()
+        self.orchestrator = SearchOrchestrator(overfetch_factor=overfetch_factor)
+        self.reranker = reranker
 
     def retrieve(
         self,
@@ -61,8 +68,24 @@ class HybridRetriever:
             top_k=top_k,
             query_embedding=query_embedding,
         )
-        return [
+        hits = [
             RetrievalHit(target=hit.target, document=hit.document, score=hit.score)
             for hit in raw_hits
         ]
+        if self.reranker is not None and hits:
+            reranked = self.reranker.rerank(
+                query=query,
+                candidates=hits,
+                top_k=top_k,
+                scope=chapter_scope,
+            )
+            hits = [
+                RetrievalHit(
+                    target=r.target,
+                    document=r.document,
+                    score=r.final_score,
+                )
+                for r in reranked
+            ]
+        return hits
 

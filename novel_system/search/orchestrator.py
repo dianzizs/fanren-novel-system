@@ -2,15 +2,72 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any, TYPE_CHECKING
 
+import jieba
+import jieba.posseg as pseg
+
 from .profiles import TARGET_PROFILES
+from ..graph_name_policy import GRAPH_CANON_SEEDS
 
 if TYPE_CHECKING:
     from ..vector_store.base import BaseVectorStore
 
 logger = logging.getLogger(__name__)
+
+
+def reciprocal_rank_fusion(
+    candidates: list[dict[str, Any]],
+    k: int = 60,
+) -> list[dict[str, Any]]:
+    """使用 RRF 算法合并多通道检索结果。
+
+    RRF 公式: score = sum(1 / (k + rank)) for each channel
+
+    Args:
+        candidates: 候选文档列表，每个包含 channel 字段标识来源通道
+        k: RRF 参数，默认 60（主流默认值）
+
+    Returns:
+        合并后的候选列表，按 RRF 分数排序
+    """
+    # 按 (target, document_id) 分组，收集各通道的排名
+    doc_scores: dict[tuple[str, str], dict[str, Any]] = {}
+    doc_ranks: dict[tuple[str, str], dict[str, int]] = {}
+
+    # 按通道分组计算排名
+    channels: dict[str, list[dict[str, Any]]] = {}
+    for item in candidates:
+        channel = item.get("channel", "default")
+        if channel not in channels:
+            channels[channel] = []
+        channels[channel].append(item)
+
+    # 计算每个通道内的排名
+    for channel, items in channels.items():
+        # 按原始分数排序
+        sorted_items = sorted(items, key=lambda x: x.get("score", 0), reverse=True)
+        for rank, item in enumerate(sorted_items, start=1):
+            key = (item["target"], item["document_id"])
+            if key not in doc_scores:
+                # 创建副本避免修改原始对象
+                doc_scores[key] = {**item}
+                doc_ranks[key] = {}
+            doc_ranks[key][channel] = rank
+
+    # 计算 RRF 分数
+    results: list[dict[str, Any]] = []
+    for key, item in doc_scores.items():
+        rrf_score = sum(1.0 / (k + rank) for rank in doc_ranks[key].values())
+        item["score"] = rrf_score
+        item["rrf_details"] = {"channels": doc_ranks[key], "k": k}
+        results.append(item)
+
+    # 按 RRF 分数排序
+    results.sort(key=lambda x: x["score"], reverse=True)
+    return results
 
 
 @dataclass
@@ -28,6 +85,15 @@ class SearchOrchestrator:
     1. Exact alias match (for character_card)
     2. Sparse text match (TF-IDF like)
     """
+
+    def __init__(self, overfetch_factor: int = 10) -> None:
+        """Initialize the search orchestrator.
+
+        Args:
+            overfetch_factor: Multiplier for dense search over-fetch when
+                chapter_scope is applied. Defaults to 10.
+        """
+        self._overfetch_factor = overfetch_factor
 
     def retrieve(
         self,
@@ -69,6 +135,8 @@ class SearchOrchestrator:
             # 特殊处理：character_card 精确别名匹配
             if target == "character_card":
                 alias_hits = self._exact_character_hits(query, docs)
+                for hit in alias_hits:
+                    hit["channel"] = "alias"
                 hits.extend(alias_hits)
 
             # 向量检索（如果提供了 query_embedding）
@@ -82,6 +150,8 @@ class SearchOrchestrator:
                         top_k=top_k,
                         chapter_scope=chapter_scope,
                     )
+                    for hit in dense_hits:
+                        hit["channel"] = "dense"
                     hits.extend(dense_hits)
 
             # TF-IDF 检索
@@ -98,50 +168,48 @@ class SearchOrchestrator:
                     top_k,
                     doc_indices=doc_indices,
                 )
+                for hit in tfidf_hits:
+                    hit["channel"] = "sparse"
                 hits.extend(tfidf_hits)
             else:
                 # 回退到字符级匹配
-                hits.extend(self._sparse_fallback(query, docs, target))
+                fallback_hits = self._sparse_fallback(query, docs, target)
+                for hit in fallback_hits:
+                    hit["channel"] = "fallback"
+                hits.extend(fallback_hits)
 
-        deduped = self._dedupe_candidates(hits)
+        # 使用 RRF 合并多通道结果
+        merged = reciprocal_rank_fusion(hits, k=60)
 
-        # 混合检索重排序：
-        # 1. 提取查询中的关键名词（用于关键词验证）
-        # 2. 对向量搜索结果进行关键词匹配度加分
+        # 关键词加分（作为后处理，不影响 RRF 主排序）
         key_terms = self._extract_key_terms(query)
         logger.debug(f"Key terms extracted from query: {key_terms}")
         if key_terms:
-            # 计算每个关键词的重要性权重
-            # 常见词（人名等）权重低，专有名词（技能名等）权重高
             term_weights = {}
             for term in key_terms:
-                # 检测是否为技能/功法名（通常包含"术"、"决"、"功"、"法"等）
                 if any(suffix in term for suffix in ["术", "决", "功", "法", "丹", "符", "剑", "阵"]):
-                    term_weights[term] = 3.0  # 技能名权重高
-                elif term in ["韩立", "张铁", "墨大夫", "三叔"]:  # 常见人名
-                    term_weights[term] = 0.5  # 人名权重低
+                    term_weights[term] = 3.0
+                elif term in GRAPH_CANON_SEEDS:
+                    term_weights[term] = 0.5
                 else:
-                    term_weights[term] = 1.0  # 默认权重
+                    term_weights[term] = 1.0
 
-            for item in deduped:
+            for item in merged:
                 doc_text = item.get("document", {}).get("text", "")
-                # 计算加权关键词覆盖率
                 total_weight = sum(term_weights.values())
                 matched_weight = sum(term_weights.get(term, 1.0) for term in key_terms if term in doc_text)
                 coverage = matched_weight / total_weight if total_weight > 0 else 0
 
-                # 如果关键词覆盖率高，提升分数
                 if coverage > 0:
                     original_score = item["score"]
-                    # 向量分数 * (1 + 覆盖率加成)
-                    item["score"] = item["score"] * (1 + coverage * 0.5)
-                    matched_terms = [term for term in key_terms if term in doc_text]
-                    logger.debug(f"Score boost: chapter={item['document'].get('chapter')}, coverage={coverage:.2f}, matched={matched_terms}, {original_score:.4f} -> {item['score']:.4f}")
+                    item["score"] = item["score"] * (1 + coverage * 0.3)
+                    logger.debug(f"RRF + keyword boost: coverage={coverage:.2f}, {original_score:.4f} -> {item['score']:.4f}")
 
-        deduped.sort(key=lambda item: item["score"], reverse=True)
+        merged.sort(key=lambda item: item["score"], reverse=True)
+
         return [
             Hit(target=item["target"], document=item["document"], score=item["score"])
-            for item in deduped[:top_k]
+            for item in merged[:top_k]
         ]
 
     def _extract_key_terms(self, query: str) -> list[str]:
@@ -149,10 +217,6 @@ class SearchOrchestrator:
 
         使用 jieba 分词提取有意义的名词。
         """
-        import re
-        import jieba
-        import jieba.posseg as pseg
-
         terms = []
 
         # 提取引号内的词（精确匹配）
@@ -281,7 +345,7 @@ class SearchOrchestrator:
             return []
 
         try:
-            search_k = top_k * 10 if chapter_scope else top_k
+            search_k = top_k * self._overfetch_factor if chapter_scope else top_k
             results = vector_store.search(query_vector, top_k=search_k)
         except Exception as e:
             logger.warning(f"Vector search failed for target={target}: {e}")
