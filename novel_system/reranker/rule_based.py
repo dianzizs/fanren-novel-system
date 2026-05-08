@@ -192,7 +192,7 @@ class RuleBasedReranker(BaseReranker):
         越接近 scope 中心章节权重越高。
         """
         if not scope:
-            return 0.5
+            return 0.0
 
         chapter = doc.get("chapter")
         if chapter is None:
@@ -202,7 +202,7 @@ class RuleBasedReranker(BaseReranker):
                 # 使用范围的中心
                 chapter = (active_range[0] + active_range[1]) / 2
             else:
-                return 0.5
+                return 0.0
 
         min_chapter = min(scope)
         max_chapter = max(scope)

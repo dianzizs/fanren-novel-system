@@ -17,8 +17,6 @@ from novel_system.graph_name_policy import (
     build_profile_from_character_registry,
     is_book_in_whitelist,
     get_policy_mode,
-    GRAPH_CANON_SEEDS,
-    GRAPH_ALIAS_LOOKUP,
     GRAPH_WHITELIST,
 )
 
@@ -385,3 +383,63 @@ class TestBuildProfileFromCharacterRegistry:
         assert "韩立" in profile.character_seeds
         assert "张铁" in profile.character_seeds
         assert profile.aliases.get("二愣子") == "韩立"
+
+
+class TestConfigLayerOverride:
+    """Tests that graph_profile.json config layer is the source of truth."""
+
+    def test_load_profile_from_config_for_main_book(self):
+        """Loading profile for 凡人修仙传 should read from graph_profile.json."""
+        profile = load_graph_profile("凡人修仙传")
+        assert profile.book_id == "凡人修仙传"
+        assert "韩立" in profile.character_seeds
+        assert "南宫婉" in profile.character_seeds
+        assert profile.aliases.get("二愣子") == "韩立"
+        assert profile.aliases.get("墨老") == "墨大夫"
+
+    def test_load_profile_from_config_for_subset_book(self):
+        """Loading profile for 凡人修仙传-1-500章-txt should read from graph_profile.json."""
+        profile = load_graph_profile("凡人修仙传-1-500章-txt")
+        assert profile.book_id == "凡人修仙传-1-500章-txt"
+        assert "韩立" in profile.character_seeds
+        assert profile.aliases.get("二愣子") == "韩立"
+
+    def test_config_seeds_are_loaded_from_profile(self):
+        """Config-loaded seeds should come from graph_profile.json."""
+        profile = load_graph_profile("凡人修仙传")
+        # Verify key characters are present (data from graph_profile.json)
+        assert "韩立" in profile.character_seeds
+        assert "南宫婉" in profile.character_seeds
+        assert len(profile.character_seeds) > 10  # Should have many characters
+
+    def test_config_aliases_are_loaded_from_profile(self):
+        """Config-loaded aliases should come from graph_profile.json."""
+        profile = load_graph_profile("凡人修仙传")
+        # Verify key aliases are present (data from graph_profile.json)
+        assert profile.aliases.get("二愣子") == "韩立"
+        assert profile.aliases.get("墨老") == "墨大夫"
+        assert len(profile.aliases) > 2  # Should have multiple aliases
+
+    def test_missing_profile_falls_back_to_empty(self, tmp_path: Path):
+        """Books without graph_profile.json get empty defaults (no cross-book contamination)."""
+        profile = load_graph_profile("nonexistent-book", data_dir=tmp_path)
+        assert profile.character_seeds == set()
+        assert profile.aliases == {}
+
+    def test_orchestrator_no_longer_imports_graph_canon_seeds(self):
+        """orchestrator.py should not import GRAPH_CANON_SEEDS directly."""
+        import ast
+        from pathlib import Path
+
+        orchestrator_path = Path(__file__).parent.parent / "novel_system" / "search" / "orchestrator.py"
+        source = orchestrator_path.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                if node.module and "graph_name_policy" in node.module:
+                    imported_names = [alias.name for alias in node.names]
+                    assert "GRAPH_CANON_SEEDS" not in imported_names, (
+                        "orchestrator.py should not import GRAPH_CANON_SEEDS; "
+                        "use character_names parameter instead"
+                    )

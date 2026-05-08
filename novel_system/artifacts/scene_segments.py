@@ -13,6 +13,8 @@ import re
 from collections import Counter
 from typing import Any
 
+import jieba.posseg as pseg
+
 
 LOCATION_SHIFT_RE = re.compile(r"(来到|走到|出了|进了|回到|在.+?广场|在.+?屋内)")
 
@@ -121,21 +123,40 @@ class SceneSegmentBuilder:
         }
 
     def _extract_person_names(self, text: str) -> list[str]:
-        """Extract person names using surname patterns and title patterns."""
-        names = []
+        """Extract person names using POS tagging and surname patterns.
+
+        Combines two strategies:
+        1. jieba POS tagging (nr = person name) for segmentation-based detection
+        2. Regex patterns (PERSON_RE, TITLE_PERSON_RE) for surname-based fallback
+
+        Results are merged, deduplicated, and filtered.
+        """
+        names: list[str] = []
+
+        # Strategy 1: jieba POS tagging — identify words tagged as person names (nr)
+        for word in pseg.cut(text):
+            if word.flag == "nr" and len(word.word) >= 2:
+                candidate = word.word.strip()
+                if (
+                    candidate not in STOP_NAMES
+                    and candidate[-1] not in BAD_NAME_ENDINGS
+                    and not candidate.endswith(("门", "帮", "山", "谷", "功", "法"))
+                ):
+                    names.append(candidate)
+
+        # Strategy 2: regex patterns (surname + title based)
         for regex in (PERSON_RE, TITLE_PERSON_RE):
             for item in regex.findall(text):
                 candidate = item.strip()
-                # Filter out invalid names
                 if (
                     len(candidate) < 2
                     or candidate in STOP_NAMES
                     or candidate[-1] in BAD_NAME_ENDINGS
                 ):
                     continue
-                # Filter out organization names
                 if candidate.endswith("门") or candidate.endswith("帮") or candidate.endswith("山") or candidate.endswith("谷"):
                     continue
                 names.append(candidate)
+
         frequency = Counter(names)
         return [name for name, _ in frequency.most_common() if name not in STOP_NAMES]

@@ -35,7 +35,8 @@ from .novel_heuristics import (
     extract_character_traits_from_index,
     NovelConfig,
 )
-from .indexing import ALIAS_MAP, BookIndexRepository, PERSON_RE, TITLE_PERSON_RE, scope_filter
+from .graph_name_policy import load_graph_profile
+from .indexing import BookIndexRepository, PERSON_RE, TITLE_PERSON_RE, scope_filter
 from .llm import LLMResponse, MiniMaxClient
 from .embedding import create_embedding_provider
 from .models import (
@@ -406,10 +407,10 @@ class NovelSystemService:
             events = self.repo._build_event_timeline(chapters, chapter_summaries)
 
             self.set_book_indexing(book_id, "indexing", 0.50)
-            character_cards = self.repo._build_character_cards(chapters)
+            character_cards = self.repo._build_character_cards(chapters, book_id)
 
             self.set_book_indexing(book_id, "indexing", 0.55)
-            character_registry = self.repo._build_character_registry(chapters, character_cards)
+            character_registry = self.repo._build_character_registry(chapters, character_cards, book_id)
 
             self.set_book_indexing(book_id, "indexing", 0.60)
             relationships = self.repo._build_relationships(chapters, character_cards)
@@ -630,6 +631,7 @@ class NovelSystemService:
             request.scope,
             request.top_k,
             request.test_harness.get("simulate"),
+            book_id=book_id,
         )
         if request.retrieved_text:
             hits = self._prepend_raw_retrieved_text(hits, request.retrieved_text, request.scope)
@@ -641,7 +643,7 @@ class NovelSystemService:
                 constraints=planner.constraints,
                 success_criteria=planner.success_criteria,
             )
-            hits = self._retrieve_with_rewrite(book_index, rewritten, fallback_planner, request.scope, request.top_k, None)
+            hits = self._retrieve_with_rewrite(book_index, rewritten, fallback_planner, request.scope, request.top_k, None, book_id=book_id)
         retrieval_duration = (time.perf_counter() - retrieval_start) * 1000
 
         # === 验证层: Evidence Gate ===
@@ -822,6 +824,7 @@ class NovelSystemService:
             request.scope,
             request.top_k,
             request.test_harness.get("simulate"),
+            book_id=book_id,
         )
         retrieval_duration = (time.perf_counter() - retrieval_start) * 1000
 
@@ -1029,8 +1032,11 @@ class NovelSystemService:
         top_k: int,
         simulate: str | None,
         query_embedding: list[float] | None = None,
+        book_id: str = "",
     ) -> list[RetrievalHit]:
-        retriever = HybridRetriever(book_index, overfetch_factor=self.config.dense_search_overfetch_factor, reranker=self.reranker)
+        profile = load_graph_profile(book_id) if book_id else None
+        character_names = profile.character_seeds if profile else None
+        retriever = HybridRetriever(book_index, overfetch_factor=self.config.dense_search_overfetch_factor, reranker=self.reranker, character_names=character_names)
         hits = retriever.retrieve(
             query=query,
             targets=planner.retrieval_targets,
@@ -1068,6 +1074,7 @@ class NovelSystemService:
         scope: Scope,
         top_k: int,
         simulate: str | None,
+        book_id: str = "",
     ) -> list[RetrievalHit]:
         """使用重写后的查询进行检索，同时保留原始查询召回补充。
 
@@ -1080,11 +1087,14 @@ class NovelSystemService:
             scope: 章节范围
             top_k: 返回结果数量上限
             simulate: 测试模拟模式
+            book_id: 书籍 ID，用于加载 graph profile
 
         Returns:
             去重后的检索结果列表
         """
-        retriever = HybridRetriever(book_index, overfetch_factor=self.config.dense_search_overfetch_factor, reranker=self.reranker)
+        profile = load_graph_profile(book_id) if book_id else None
+        character_names = profile.character_seeds if profile else None
+        retriever = HybridRetriever(book_index, overfetch_factor=self.config.dense_search_overfetch_factor, reranker=self.reranker, character_names=character_names)
 
         # 计算 query embedding 用于向量检索
         query_embedding = self._compute_query_embedding(rewritten.rewritten)
@@ -1517,11 +1527,17 @@ class NovelSystemService:
             if scope_filter(int(card.get("chapter", 0)), scope.chapters)
         ]
         scoped_names = {card.get("name") for card in chapter_cards}
+        # Build alias lookup from character_registry (canonical source)
+        alias_lookup: dict[str, str] = {}
+        for entry in book_index.corpora.get("character_registry", []):
+            canonical = entry.get("canonical_name", "")
+            for alias in entry.get("aliases", []):
+                alias_lookup[alias] = canonical
         for name in names:
             if name in {"韩立", "前14章"}:
                 continue
             if name not in known_names or name not in scoped_names:
-                if all(alias != name for aliases in ALIAS_MAP.values() for alias in aliases):
+                if name not in alias_lookup:
                     return True
         return False
 

@@ -141,7 +141,11 @@ class FAISSVectorStore(BaseVectorStore):
         top_k: int = 10,
         filter: Optional[dict[str, Any]] = None,
     ) -> list[VectorSearchResult]:
-        """搜索相似向量。"""
+        """搜索相似向量。
+
+        注意：filter 在搜索之后应用（后过滤），因此实际返回结果数可能少于 top_k。
+        如需精确返回 top_k 条匹配结果，建议增大 top_k 或在外层重试。
+        """
         if self._index.ntotal == 0:
             return []
 
@@ -184,10 +188,12 @@ class FAISSVectorStore(BaseVectorStore):
 
     def delete(self, ids: list[str]) -> int:
         """
-        删除向量（标记删除）。
+        删除向量（逻辑删除）。
 
-        FAISS 不支持真正的删除，此方法将索引标记为已删除。
-        当删除比例超过阈值时自动 compact。
+        注意：FAISS 不支持原生删除，此方法仅标记向量为已删除状态，
+        底层索引数据不变。被标记的向量在 search() 中被跳过，但仍占用索引空间。
+        调用 compact() 可物理移除已删除向量并重建索引。
+        当删除比例超过 50% 时自动触发 compact。
         """
         count = 0
         for id_ in ids:
@@ -322,6 +328,8 @@ class FAISSVectorStore(BaseVectorStore):
             for id_ in valid_ids:
                 idx = self._id_to_idx[id_]
                 valid_vectors.append(all_vectors[idx].tolist())
+        else:
+            logger.warning("FAISS index does not expose 'xb' attribute, cannot compact")
 
         if not valid_vectors:
             return

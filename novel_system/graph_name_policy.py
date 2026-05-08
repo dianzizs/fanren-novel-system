@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .indexing import ALIAS_MAP, COMMON_SURNAMES
+from .indexing import COMMON_SURNAMES
 
 logger = logging.getLogger(__name__)
 
@@ -27,12 +27,6 @@ GRAPH_TITLE_SUFFIXES = (
     "长老", "掌柜", "胖子", "师叔", "师伯", "仙子", "上人",
 )
 
-GRAPH_CANON_SEEDS = {
-    "韩立", "张铁", "墨大夫", "韩胖子", "韩父", "韩母", "韩师弟",
-    "韩师兄", "王护法", "王门主", "岳堂主", "舞岩", "厉师兄",
-    "厉飞雨", "余子童", "贾天龙", "赵子灵", "张长贵", "万小山",
-    "李长老", "曲魂", "陈巧倩", "董萱儿", "南宫婉",
-}
 
 GRAPH_GENERIC_NAMES = {
     "时间", "方法", "武功", "石室", "山崖", "麻绳", "童子", "章完",
@@ -41,7 +35,7 @@ GRAPH_GENERIC_NAMES = {
     "颜色", "章节", "时分", "万分", "舒服", "计划", "范围", "郁闷",
     "黄龙丹", "张均", "张哥", "许能打", "谈虎色", "解决掉", "陈旧",
     "成了两", "和自己", "和一位", "和普通", "和一个", "和对方",
-    "和他们", "和韩立", "和张铁",
+    "和他们",
 }
 
 GRAPH_GENERIC_SUBSTRINGS = {
@@ -58,12 +52,6 @@ GRAPH_GENERIC_FRAGMENT_CHARS = set(
     "望终大皱只倒站微正用刚神可听看脸身手眼眉脚口面并此再却仍将其惊略知吃为以感现当早无"
 )
 
-GRAPH_ALIAS_LOOKUP = {
-    "二愣子": "韩立",
-    "三叔": "韩胖子",
-    "韩立三叔": "韩胖子",
-    "墨老": "墨大夫",
-}
 
 # ---------------------------------------------------------------------------
 # Whitelist configuration for book-specific policy
@@ -76,22 +64,139 @@ GRAPH_WHITELIST: set[str] = {
     "凡人修仙传-1-500章-txt",
 }
 
+# Cache for loaded whitelist config
+_whitelist_config_cache: dict[str, Any] | None = None
+_whitelist_config_loaded: bool = False
 
-def is_book_in_whitelist(book_id: str) -> bool:
+
+def load_whitelist_config(data_dir: Path | None = None) -> dict[str, Any]:
+    """Load whitelist configuration from external JSON file.
+
+    Config file format (data/whitelist.json):
+    {
+        "books": ["book_id_1", "book_id_2"],
+        "auto_detect": true
+    }
+
+    Args:
+        data_dir: Base data directory (defaults to data/)
+
+    Returns:
+        Config dict with 'books' (list) and 'auto_detect' (bool)
+    """
+    global _whitelist_config_cache, _whitelist_config_loaded
+
+    if _whitelist_config_loaded:
+        return _whitelist_config_cache  # type: ignore[return-value]
+
+    if data_dir is None:
+        from .config import AppConfig
+        config = AppConfig.load()
+        data_dir = config.data_dir
+
+    config_path = data_dir / "whitelist.json"
+
+    default_config: dict[str, Any] = {"books": [], "auto_detect": True}
+
+    if not config_path.exists():
+        logger.debug(f"No whitelist.json found at {config_path}, using defaults")
+        _whitelist_config_cache = default_config
+        _whitelist_config_loaded = True
+        return default_config
+
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        result: dict[str, Any] = {
+            "books": list(data.get("books", [])),
+            "auto_detect": bool(data.get("auto_detect", True)),
+        }
+        logger.info(f"Loaded whitelist config from {config_path}: {len(result['books'])} books, auto_detect={result['auto_detect']}")
+        _whitelist_config_cache = result
+        _whitelist_config_loaded = True
+        return result
+    except (json.JSONDecodeError, KeyError, TypeError) as e:
+        logger.warning(f"Failed to load whitelist config from {config_path}: {e}, using defaults")
+        _whitelist_config_cache = default_config
+        _whitelist_config_loaded = True
+        return default_config
+
+
+def reset_whitelist_config_cache() -> None:
+    """Reset the whitelist config cache. Used for testing."""
+    global _whitelist_config_cache, _whitelist_config_loaded
+    _whitelist_config_cache = None
+    _whitelist_config_loaded = False
+
+
+def auto_detect_book(book_id: str, data_dir: Path | None = None) -> bool:
+    """Auto-detect if a book should be whitelisted based on graph_profile.json presence.
+
+    A book with graph_profile.json is considered ready for profile-based policy.
+
+    Args:
+        book_id: The book identifier
+        data_dir: Base data directory (defaults to data/books)
+
+    Returns:
+        True if the book has graph_profile.json, False otherwise
+    """
+    if data_dir is None:
+        from .config import AppConfig
+        config = AppConfig.load()
+        data_dir = config.data_dir / "books"
+
+    profile_path = data_dir / book_id / "graph_profile.json"
+    detected = profile_path.exists()
+
+    if detected:
+        logger.info(f"Auto-detected book '{book_id}': graph_profile.json found at {profile_path}")
+    else:
+        logger.debug(f"Auto-detect for book '{book_id}': no graph_profile.json found")
+
+    return detected
+
+
+def is_book_in_whitelist(book_id: str, data_dir: Path | None = None) -> bool:
     """Check if a book is in the graph policy whitelist.
+
+    Whitelist sources (in priority order):
+    1. Hardcoded GRAPH_WHITELIST set
+    2. External whitelist.json config file
+    3. Auto-detection: book has graph_profile.json (if auto_detect enabled)
 
     Books in the whitelist use the new graph profile-based naming strategy.
     Books not in the whitelist fall back to default heuristics.
 
     Args:
         book_id: The book identifier to check
+        data_dir: Base data directory for config loading
 
     Returns:
         True if the book is in the whitelist, False otherwise
     """
-    is_in_whitelist = book_id in GRAPH_WHITELIST
-    logger.debug(f"Whitelist check for book '{book_id}': {'HIT' if is_in_whitelist else 'MISS'}")
-    return is_in_whitelist
+    # Check hardcoded whitelist first
+    if book_id in GRAPH_WHITELIST:
+        logger.info(f"Whitelist check for book '{book_id}': HIT (hardcoded)")
+        return True
+
+    # Check external config
+    config = load_whitelist_config(data_dir=data_dir)
+    if book_id in config.get("books", []):
+        logger.info(f"Whitelist check for book '{book_id}': HIT (config file)")
+        return True
+
+    # Check auto-detection
+    if config.get("auto_detect", True):
+        books_dir: Path | None = None
+        if data_dir is not None:
+            books_dir = data_dir / "books"
+        if auto_detect_book(book_id, data_dir=books_dir):
+            logger.info(f"Whitelist check for book '{book_id}': HIT (auto-detected)")
+            return True
+
+    logger.info(f"Whitelist check for book '{book_id}': MISS")
+    return False
 
 
 def get_policy_mode(book_id: str) -> str:
@@ -109,6 +214,20 @@ def get_policy_mode(book_id: str) -> str:
 # ---------------------------------------------------------------------------
 # Graph Profile (per-book configuration)
 # ---------------------------------------------------------------------------
+
+@dataclass
+class CandidateEvidence:
+    """Evidence for a character candidate, used by three-evidence filtering.
+
+    Attributes:
+        frequency: How often the name appears across the book
+        chapter_span: Number of distinct chapters the name appears in
+        has_scene_evidence: Whether the name appears in event/scene contexts
+    """
+    frequency: int = 0
+    chapter_span: int = 0
+    has_scene_evidence: bool = False
+
 
 @dataclass
 class GraphProfile:
@@ -204,6 +323,21 @@ def resolve_aliases(name: str) -> str:
     Delegates to resolve_aliases_with_profile with None profile (uses defaults).
     """
     return resolve_aliases_with_profile(name, profile=None)
+
+
+def merge_aliases(*sources: dict[str, list[str]]) -> dict[str, str]:
+    """Merge multiple alias sources into a single {alias: canonical} lookup.
+
+    Each source uses the ``{canonical: [alias, ...]}`` format (like ALIAS_MAP).
+    Returns a flat ``{alias: canonical}`` dict suitable for resolve_aliases_with_profile.
+    Later sources override earlier ones for the same alias.
+    """
+    merged: dict[str, str] = {}
+    for source in sources:
+        for canonical, aliases in source.items():
+            for alias in aliases:
+                merged[alias] = canonical
+    return merged
 
 
 def filter_candidates(
@@ -396,7 +530,6 @@ def resolve_aliases_with_profile(name: str, profile: GraphProfile | None = None)
     if profile is not None:
         return profile.aliases.get(name, name)
     return name
-    return GRAPH_ALIAS_LOOKUP.get(name, name)
 
 
 def filter_candidates_with_profile(
@@ -422,6 +555,119 @@ def filter_candidates_with_profile(
         scores = raw_scores
     known_names = _seed_graph_known_names(scores, profile)
     return scores, known_names
+
+
+def build_candidate_evidence_from_chapters(
+    chapters: list[dict[str, Any]],
+    extract_names: Any,
+) -> dict[str, CandidateEvidence]:
+    """Build CandidateEvidence from chapter data.
+
+    Computes frequency and chapter_span. Scene evidence must be set
+    separately by the caller (e.g. by checking character_card or event data).
+
+    Args:
+        chapters: List of chapter dicts with 'chapter' and 'text' keys
+        extract_names: Callable that extracts person names from text
+
+    Returns:
+        Mapping from name to CandidateEvidence
+    """
+    evidence: dict[str, CandidateEvidence] = {}
+
+    for chapter in chapters:
+        text = chapter.get("text", "")
+        if not text:
+            continue
+        names = extract_names(text)
+        seen_in_chapter: set[str] = set()
+        for name in names:
+            if name not in evidence:
+                evidence[name] = CandidateEvidence()
+            evidence[name].frequency += 1
+            if name not in seen_in_chapter:
+                evidence[name].chapter_span += 1
+                seen_in_chapter.add(name)
+
+    return evidence
+
+
+def filter_candidates_with_evidence(
+    candidates: dict[str, CandidateEvidence],
+    profile: GraphProfile | None = None,
+    *,
+    min_frequency: int = 2,
+    min_chapter_span: int = 1,
+    min_score: float = 3.0,
+) -> list[dict[str, Any]]:
+    """Filter character candidates using three-evidence strategy.
+
+    Evidence types:
+    - frequency: how often the name appears (noise filter)
+    - chapter_span: how many chapters the name appears in (persistence)
+    - scene_evidence: whether the name appears in event/scene contexts (relevance)
+
+    Args:
+        candidates: Mapping from name to its evidence
+        profile: Optional GraphProfile for seed/alias data
+        min_frequency: Minimum frequency threshold (default 2)
+        min_chapter_span: Minimum chapter span threshold (default 1)
+        min_score: Minimum composite score for non-seed names (default 3.0)
+
+    Returns:
+        List of filtered candidate dicts, sorted by score descending, deduplicated by canonical name.
+        Each dict contains: canonical_name, aliases, frequency, chapter_span, chapters,
+        scene_evidence, score, is_seed.
+    """
+    canon_seeds, alias_lookup = get_effective_seeds_and_aliases(profile)
+    known_names = {name for name in candidates} | canon_seeds
+
+    filtered: list[dict[str, Any]] = []
+    for name, evidence in candidates.items():
+        if evidence.frequency < min_frequency:
+            continue
+
+        normalized = normalize_name_with_profile(name, known_names, profile)
+        if not normalized:
+            continue
+
+        chapter_span = evidence.chapter_span
+        score = (
+            evidence.frequency * 1.0
+            + chapter_span * 2.0
+            + (1.5 if evidence.has_scene_evidence else 0.0)
+            + (5.0 if name in canon_seeds else 0.0)
+        )
+
+        if score < min_score and name not in canon_seeds:
+            continue
+
+        # Collect aliases for this canonical name
+        aliases: set[str] = set()
+        for alias, canonical in alias_lookup.items():
+            if canonical == normalized:
+                aliases.add(alias)
+
+        filtered.append({
+            "canonical_name": normalized,
+            "aliases": sorted(aliases),
+            "frequency": evidence.frequency,
+            "chapter_span": chapter_span,
+            "scene_evidence": evidence.has_scene_evidence,
+            "score": round(score, 2),
+            "is_seed": name in canon_seeds,
+        })
+
+    # Deduplicate by canonical name, keeping highest score
+    seen: set[str] = set()
+    result: list[dict[str, Any]] = []
+    for item in sorted(filtered, key=lambda x: -x["score"]):
+        canonical = item["canonical_name"]
+        if canonical not in seen:
+            seen.add(canonical)
+            result.append(item)
+
+    return result
 
 
 def get_effective_seeds_and_aliases(profile: GraphProfile | None = None) -> tuple[set[str], dict[str, str]]:

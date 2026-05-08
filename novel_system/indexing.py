@@ -141,12 +141,6 @@ RULE_PATTERNS = (
     "功法",
     "修炼",
 )
-ALIAS_MAP = {
-    "韩立": ["二愣子"],
-    "韩胖子": ["三叔", "韩立三叔"],
-    "三叔": ["韩胖子"],
-    "墨大夫": ["墨老"],
-}
 
 
 @dataclass
@@ -190,6 +184,7 @@ class BookIndexRepository:
                         books.append(json.load(handle))
                     break
                 except json.JSONDecodeError:
+                    logger.warning(f"JSONDecodeError reading {manifest_path}, attempt {attempt + 1}/3")
                     if attempt == 2:
                         raise
                     time.sleep(0.01)
@@ -277,8 +272,8 @@ class BookIndexRepository:
         chunks = self._build_chunks(chapters)
         chapter_summaries = self._build_chapter_summaries(chapters)
         events = self._build_event_timeline(chapters, chapter_summaries)
-        character_cards = self._build_character_cards(chapters)
-        character_registry = self._build_character_registry(chapters, character_cards)
+        character_cards = self._build_character_cards(chapters, book_id)
+        character_registry = self._build_character_registry(chapters, character_cards, book_id)
         relationships = self._build_relationships(chapters, character_cards)
         world_rules = self._build_world_rules(chapters)
         canon_memory = self._build_canon_memory(chapter_summaries, events)
@@ -531,7 +526,19 @@ class BookIndexRepository:
             )
         return docs
 
-    def _build_character_cards(self, chapters: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _build_character_cards(
+        self,
+        chapters: list[dict[str, Any]],
+        book_id: str = "",
+    ) -> list[dict[str, Any]]:
+        from .graph_name_policy import load_graph_profile
+
+        profile = load_graph_profile(book_id, self.config.data_dir / "books")
+        # Build {canonical: [alias, ...]} from profile's {alias: canonical} mapping
+        profile_alias_map: dict[str, list[str]] = {}
+        for alias, canonical in profile.aliases.items():
+            profile_alias_map.setdefault(canonical, []).append(alias)
+
         chapter_hits: dict[str, list[int]] = defaultdict(list)
         evidence_lines: dict[str, list[str]] = defaultdict(list)
         frequency: Counter[str] = Counter()
@@ -554,13 +561,14 @@ class BookIndexRepository:
         docs: list[dict[str, Any]] = []
         for name in ranked_names:
             chapters_list = sorted(set(chapter_hits[name]))
-            alias_text = "、".join(ALIAS_MAP.get(name, []))
+            aliases = profile_alias_map.get(name, [])
+            alias_text = "、".join(aliases)
             snippets = " ".join(evidence_lines[name][:3])
-            profile = f"姓名：{name}；首次出现章节：{chapters_list[0]}；相关章节：{chapters_list[:8]}。"
+            card_profile = f"姓名：{name}；首次出现章节：{chapters_list[0]}；相关章节：{chapters_list[:8]}。"
             if alias_text:
-                profile += f" 别名/相关称呼：{alias_text}。"
+                card_profile += f" 别名/相关称呼：{alias_text}。"
             if snippets:
-                profile += f" 证据摘要：{snippets}"
+                card_profile += f" 证据摘要：{snippets}"
             docs.append(
                 {
                     "id": f"character-{name}",
@@ -568,11 +576,11 @@ class BookIndexRepository:
                     "chapter_span": [chapters_list[0], chapters_list[-1]],
                     "title": name,
                     "target": "character_card",
-                    "text": profile[:420],
-                    "retrieval_text": profile[:420],  # 用于检索的文本字段
+                    "text": card_profile[:420],
+                    "retrieval_text": card_profile[:420],  # 用于检索的文本字段
                     "name": name,
                     "canonical_name": name,  # 用于精确别名匹配
-                    "aliases": ALIAS_MAP.get(name, []),
+                    "aliases": aliases,
                     "chapters": chapters_list,
                     "source": f"{name}人物卡",
                 }
@@ -583,6 +591,7 @@ class BookIndexRepository:
         self,
         chapters: list[dict[str, Any]],
         character_cards: list[dict[str, Any]],
+        book_id: str = "",
     ) -> list[dict[str, Any]]:
         """Build character registry with filtered candidates.
 
@@ -594,104 +603,61 @@ class BookIndexRepository:
         Args:
             chapters: Parsed chapter data
             character_cards: Pre-built character cards
+            book_id: Book identifier for loading graph profile
 
         Returns:
             List of character registry entries with canonical names and aliases
         """
         from .graph_name_policy import (
-            GraphProfile,
+            CandidateEvidence,
+            build_candidate_evidence_from_chapters,
+            filter_candidates_with_evidence,
             load_graph_profile,
-            normalize_name_with_profile,
-            get_effective_seeds_and_aliases,
         )
 
-        # Try to load profile (uses defaults if not found)
-        profile = load_graph_profile("", self.config.data_dir / "books")
-        canon_seeds, alias_lookup = get_effective_seeds_and_aliases(profile)
+        profile = load_graph_profile(book_id, self.config.data_dir / "books")
 
-        # Collect evidence for each candidate
-        name_evidence: dict[str, dict[str, Any]] = defaultdict(
-            lambda: {
-                "frequency": 0,
-                "chapters": set(),
-                "scene_count": 0,
-                "aliases": set(),
-            }
+        # Build evidence from chapters (frequency + chapter_span)
+        evidence = build_candidate_evidence_from_chapters(
+            chapters, self._extract_person_names
         )
 
-        # Extract from chapters
-        for chapter in chapters:
-            text = chapter.get("text", "")
-            if not text:
-                continue
-            names = self._extract_person_names(text)
-            for name in names:
-                name_evidence[name]["frequency"] += 1
-                name_evidence[name]["chapters"].add(chapter["chapter"])
-
-        # Extract from character cards (scene evidence)
+        # Mark scene evidence from character cards
         card_names = {card["name"] for card in character_cards}
         for card in character_cards:
             name = card["name"]
-            if name in name_evidence:
-                name_evidence[name]["scene_count"] += 1
-                # Add aliases from cards
-                for alias in card.get("aliases", []):
-                    name_evidence[name]["aliases"].add(alias)
+            if name in evidence:
+                evidence[name].has_scene_evidence = True
 
-        # Add aliases from profile/config
-        for alias, canonical in alias_lookup.items():
-            if canonical in name_evidence:
-                name_evidence[canonical]["aliases"].add(alias)
+        # Filter using three-evidence strategy
+        filtered = filter_candidates_with_evidence(evidence, profile)
 
-        # Filter candidates based on evidence
-        filtered_candidates: list[dict[str, Any]] = []
-        for name, evidence in name_evidence.items():
-            # Skip if frequency too low (noise filter)
-            if evidence["frequency"] < 2:
-                continue
-
-            # Normalize name using profile
-            normalized = normalize_name_with_profile(name, card_names, profile)
-            if not normalized:
-                continue
-
-            # Calculate composite score
-            chapter_span = len(evidence["chapters"])
-            score = (
-                evidence["frequency"] * 1.0 +
-                chapter_span * 2.0 +
-                evidence["scene_count"] * 1.5 +
-                (5.0 if name in canon_seeds else 0.0)
+        # Build registry entries with extra fields
+        registry: list[dict[str, Any]] = []
+        for item in filtered:
+            canonical = item["canonical_name"]
+            # Find matching card for chapter info
+            matching_card = next(
+                (c for c in character_cards if c.get("name") == canonical),
+                None,
             )
+            chapters_list = matching_card.get("chapters", []) if matching_card else []
+            aliases = item["aliases"]
 
-            # Minimum threshold for inclusion
-            if score < 3.0 and name not in canon_seeds:
-                continue
-
-            filtered_candidates.append({
-                "id": f"reg-{name}",
-                "canonical_name": normalized,
-                "aliases": sorted(evidence["aliases"]),
-                "frequency": evidence["frequency"],
-                "chapter_span": chapter_span,
-                "chapters": sorted(evidence["chapters"]),
-                "scene_evidence": evidence["scene_count"] > 0,
-                "score": round(score, 2),
-                "is_seed": name in canon_seeds,
-                "text": f"{normalized} {' '.join(sorted(evidence['aliases']))} 章节{sorted(evidence['chapters'])[:5]}",
+            registry.append({
+                "id": f"reg-{canonical}",
+                "canonical_name": canonical,
+                "aliases": aliases,
+                "frequency": item["frequency"],
+                "chapter_span": item["chapter_span"],
+                "chapters": chapters_list,
+                "scene_evidence": item["scene_evidence"],
+                "score": item["score"],
+                "is_seed": item["is_seed"],
+                "text": f"{canonical} {' '.join(aliases)} 章节{chapters_list[:5]}",
             })
 
-        # Sort by score and deduplicate by canonical name
-        seen_canonical: set[str] = set()
-        registry: list[dict[str, Any]] = []
-        for candidate in sorted(filtered_candidates, key=lambda x: -x["score"]):
-            canonical = candidate["canonical_name"]
-            if canonical not in seen_canonical:
-                seen_canonical.add(canonical)
-                registry.append(candidate)
-
-        return registry[:200]  # Limit to top 200 characters
+        return registry[:200]
 
     def _build_relationships(
         self,

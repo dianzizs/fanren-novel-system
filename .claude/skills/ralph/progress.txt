@@ -1,4 +1,25 @@
 # Ralph Progress Log
-Started: Mon May  4 01:05:52     2026
+Started: Sun May  4 2026
 ---
-US-001: PASS — Restored reranker module, added config fields, wired into HybridRetriever and NovelSystemService. 238 tests pass.
+
+## US-002: 书籍级 graph 配置外置 — DONE
+- Created graph_profile.json for both books (凡人修仙传, 凡人修仙传-1-500章-txt)
+- Removed direct GRAPH_CANON_SEEDS import from orchestrator.py
+- Added character_names parameter to SearchOrchestrator.retrieve() and HybridRetriever.__init__()
+- service.py now loads graph_profile in _retrieve/_retrieve_with_rewrite and passes seeds
+- Added 6 new tests in TestConfigLayerOverride
+- All 267 tests pass
+
+## US-003: 索引阶段人物候选抽取 — DONE
+- Added jieba POS tagging (nr tag) to SceneSegmentBuilder._extract_person_names()
+- Added filtering for false positives (武功/功/法 endings)
+- Added 5 new tests in test_scene_segments.py
+- All 272 tests pass
+
+## US-004: 候选过滤三证据策略 — DONE
+- Added CandidateEvidence dataclass and filter_candidates_with_evidence() to graph_name_policy.py
+- Three evidence types: frequency, chapter_span, scene_evidence
+- Added build_candidate_evidence_from_chapters() helper
+- Refactored indexing.py:_build_character_registry to delegate filtering to policy module
+- Added 13 new tests in test_graph_name_policy.py
+- All 285 tests pass

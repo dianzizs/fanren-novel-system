@@ -33,10 +33,12 @@ class HybridRetriever:
         book_index: Any,
         overfetch_factor: int = 10,
         reranker: BaseReranker | None = None,
+        character_names: set[str] | None = None,
     ) -> None:
         self.book_index = book_index
         self.orchestrator = SearchOrchestrator(overfetch_factor=overfetch_factor)
         self.reranker = reranker
+        self._character_names = character_names
 
     def retrieve(
         self,
@@ -67,6 +69,7 @@ class HybridRetriever:
             chapter_scope=chapter_scope,
             top_k=top_k,
             query_embedding=query_embedding,
+            character_names=self._character_names,
         )
         hits = [
             RetrievalHit(target=hit.target, document=hit.document, score=hit.score)

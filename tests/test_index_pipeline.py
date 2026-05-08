@@ -54,9 +54,15 @@ def test_pipeline_builds_scene_and_registry():
         {
             "chapter": 1,
             "title": "山边小村",
-            "text": "韩立。张铁。韩立。",
-            "paragraphs": ["韩立。张铁。韩立。"],
-        }
+            "text": "韩立。张铁。",
+            "paragraphs": ["韩立。张铁。"],
+        },
+        {
+            "chapter": 2,
+            "title": "七玄门",
+            "text": "韩立。张铁。",
+            "paragraphs": ["韩立。张铁。"],
+        },
     ]
 
     artifacts = build_book_artifacts(chapters)

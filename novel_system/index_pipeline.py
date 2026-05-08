@@ -10,10 +10,12 @@ from typing import Any
 from .artifacts.character_registry import CharacterRegistryBuilder
 from .artifacts.scene_segments import SceneSegmentBuilder
 from .artifacts.targets import build_chapter_chunks, build_character_cards, build_event_timeline
-from .indexing import ALIAS_MAP
 
 
-def build_book_artifacts(chapters: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+def build_book_artifacts(
+    chapters: list[dict[str, Any]],
+    seed_aliases: dict[str, list[str]] | None = None,
+) -> dict[str, list[dict[str, Any]]]:
     """Build all artifacts from parsed chapters.
 
     This is the main entry point for indexing. It orchestrates:
@@ -23,6 +25,7 @@ def build_book_artifacts(chapters: list[dict[str, Any]]) -> dict[str, list[dict[
 
     Args:
         chapters: List of chapter dicts with 'chapter', 'title', 'text', 'paragraphs' keys.
+        seed_aliases: Optional {canonical: [alias, ...]} mapping for known characters.
 
     Returns:
         Dict mapping artifact names to lists of artifact dicts.
@@ -31,7 +34,7 @@ def build_book_artifacts(chapters: list[dict[str, Any]]) -> dict[str, list[dict[
     scenes = SceneSegmentBuilder().build(chapters)
 
     # Step 2: Build character registry
-    registry = CharacterRegistryBuilder(seed_aliases=ALIAS_MAP).build(scenes)
+    registry = CharacterRegistryBuilder(seed_aliases=seed_aliases or {}).build(scenes)
 
     # Step 3: Build target artifacts
     events = build_event_timeline(scenes)

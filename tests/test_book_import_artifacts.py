@@ -164,5 +164,34 @@ class BookImportArtifactsTest(unittest.TestCase):
         self.assertEqual(status_response.json()["book_id"], book_id)
 
 
+class NormalizeBookIdTest(unittest.TestCase):
+    def test_single_encoded_id_returns_unchanged(self):
+        from novel_system.api import _normalize_book_id
+        book_id = "my-book"
+        self.assertEqual(_normalize_book_id(book_id), book_id)
+
+    def test_double_encoded_id_decodes_correctly(self):
+        from novel_system.api import _normalize_book_id
+        raw = "凡人修仙传(1-500章)"
+        double = quote(quote(raw, safe=""), safe="")
+        self.assertEqual(_normalize_book_id(double), raw)
+
+    def test_triple_encoded_id_decodes_correctly(self):
+        from novel_system.api import _normalize_book_id
+        raw = "test book"
+        triple = quote(quote(quote(raw, safe=""), safe=""), safe="")
+        self.assertEqual(_normalize_book_id(triple), raw)
+
+    def test_non_ascii_id_passes_through_unchanged(self):
+        from novel_system.api import _normalize_book_id
+        book_id = "凡人修仙传"
+        self.assertEqual(_normalize_book_id(book_id), book_id)
+
+    def test_plain_ascii_id_returns_unchanged(self):
+        from novel_system.api import _normalize_book_id
+        book_id = "plain-ascii-id-123"
+        self.assertEqual(_normalize_book_id(book_id), book_id)
+
+
 if __name__ == "__main__":
     unittest.main()

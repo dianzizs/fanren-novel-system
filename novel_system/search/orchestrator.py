@@ -10,7 +10,6 @@ import jieba
 import jieba.posseg as pseg
 
 from .profiles import TARGET_PROFILES
-from ..graph_name_policy import GRAPH_CANON_SEEDS
 
 if TYPE_CHECKING:
     from ..vector_store.base import BaseVectorStore
@@ -104,6 +103,7 @@ class SearchOrchestrator:
         chapter_scope: list[int],
         top_k: int,
         query_embedding: list[float] | None = None,
+        character_names: set[str] | None = None,
     ) -> list[Hit]:
         """Retrieve candidates from multiple targets.
 
@@ -114,6 +114,8 @@ class SearchOrchestrator:
             chapter_scope: Chapter range for filtering.
             top_k: Maximum results to return.
             query_embedding: Optional query vector for dense search.
+            character_names: Optional set of known character names for
+                keyword weighting. Loaded from graph profile when available.
 
         Returns:
             List of Hit objects sorted by score.
@@ -185,11 +187,12 @@ class SearchOrchestrator:
         key_terms = self._extract_key_terms(query)
         logger.debug(f"Key terms extracted from query: {key_terms}")
         if key_terms:
+            char_names = character_names or set()
             term_weights = {}
             for term in key_terms:
                 if any(suffix in term for suffix in ["术", "决", "功", "法", "丹", "符", "剑", "阵"]):
                     term_weights[term] = 3.0
-                elif term in GRAPH_CANON_SEEDS:
+                elif term in char_names:
                     term_weights[term] = 0.5
                 else:
                     term_weights[term] = 1.0
