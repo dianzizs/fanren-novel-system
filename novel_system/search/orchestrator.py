@@ -251,7 +251,9 @@ class SearchOrchestrator:
             if active_range and len(active_range) >= 2:
                 return active_range[0] <= max(chapter_scope) and active_range[1] >= min(chapter_scope)
             return True  # No chapter info, include by default
-        return chapter in chapter_scope
+        if len(chapter_scope) == 1:
+            return chapter == chapter_scope[0]
+        return min(chapter_scope) <= chapter <= max(chapter_scope)
 
     def _exact_character_hits(
         self, query: str, docs: list[dict[str, Any]]
@@ -371,15 +373,34 @@ class SearchOrchestrator:
     def _sparse_fallback(
         self, query: str, docs: list[dict[str, Any]], target: str
     ) -> list[dict[str, Any]]:
-        """Simple character-level overlap scoring."""
+        """使用 jieba 分词进行词级匹配，并过滤停用词。"""
         text_field = TARGET_PROFILES[target]["text_field"]
+        
+        # 1. 对查询进行分词并过滤无意义字符/停用词
+        query_words = [w.strip() for w in jieba.cut(query) if w.strip()]
+        stopwords = {"的", "了", "在", "是", "我", "你", "他", "它", "们", "这", "那", "之", "与", "及", "有", "无", "不", "而", "何", "谁", "吗", "呢", "啊", "吧", "呀", "的", "了", "在"}
+        filtered_query_words = [w for w in query_words if w not in stopwords]
+        
+        # 如果过滤后没有有效词，则退回到使用全部非空分词
+        if not filtered_query_words:
+            filtered_query_words = query_words
+        if not filtered_query_words:
+            return []
+            
         results = []
         for doc in docs:
             text = str(doc.get(text_field, ""))
-            # Simple character overlap scoring
-            overlap = sum(1 for char in query if char and char in text)
-            if overlap > 0:
-                score = overlap / max(1, len(query))
+            if not text:
+                continue
+            
+            # 计算词重合度
+            overlap_count = 0
+            for word in filtered_query_words:
+                if word in text:
+                    overlap_count += 1
+            
+            if overlap_count > 0:
+                score = overlap_count / len(filtered_query_words)
                 results.append({
                     "target": target,
                     "document_id": doc.get("id", ""),

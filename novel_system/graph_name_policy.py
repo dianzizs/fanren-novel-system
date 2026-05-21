@@ -503,14 +503,12 @@ def normalize_name_with_profile(
     for base in sorted_known:
         if not base:
             continue
-        if name == base:
-            return base
-        if name.startswith(base) and (
+        if len(name) > len(base) and name.startswith(base) and (
             len(name) == len(base) + 1
             or _is_generic_graph_fragment(name[len(base):])
         ):
             return base
-        if name.endswith(base) and (
+        if len(name) > len(base) and name.endswith(base) and (
             len(name) == len(base) + 1
             or _is_generic_graph_fragment(name[: -len(base)])
         ):
@@ -620,7 +618,7 @@ def filter_candidates_with_evidence(
         scene_evidence, score, is_seed.
     """
     canon_seeds, alias_lookup = get_effective_seeds_and_aliases(profile)
-    known_names = {name for name in candidates} | canon_seeds
+    known_names = {name for name in candidates if looks_like_graph_name(name)} | canon_seeds
 
     filtered: list[dict[str, Any]] = []
     for name, evidence in candidates.items():

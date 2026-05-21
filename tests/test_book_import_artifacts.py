@@ -66,7 +66,7 @@ class BookImportArtifactsTest(unittest.TestCase):
             trace_log_level="INFO",
             dense_search_overfetch_factor=10,
         )
-        self.embedding_patch = patch("novel_system.service.create_embedding_provider", return_value=None)
+        self.embedding_patch = patch("novel_system.services.base.create_embedding_provider", return_value=None)
         self.embedding_patch.start()
         self.service = NovelSystemService(self.config)
 

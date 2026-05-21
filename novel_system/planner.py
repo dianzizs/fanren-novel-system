@@ -88,23 +88,72 @@ class RewrittenQuery:
     expansions: list[str]
 
 
+
 class QueryRewriter:
     """规则化查询重写：扩展别名、补全指代、提取对话上下文"""
+
+    def _get_expansion_groups(self, book_id: str) -> list[set[str]]:
+        # Hardcoded default expansions converted to groups
+        groups = []
+        for key, aliases in ALIAS_EXPANSIONS.items():
+            groups.append({key} | set(aliases))
+            
+        if not book_id:
+            return groups
+            
+        try:
+            from .graph_name_policy import load_graph_profile
+            from .config import AppConfig
+            
+            config = AppConfig.load()
+            profile = load_graph_profile(book_id, config.data_dir / "books")
+            
+            # Group by canonical name
+            profile_groups_map: dict[str, set[str]] = {}
+            for alias, canonical in profile.aliases.items():
+                profile_groups_map.setdefault(canonical, {canonical}).add(alias)
+                
+            if profile_groups_map:
+                # Merge: we combine default general terms (like 瓶子, 七玄门) and profile terms
+                # but if there's overlap in canonical names, we prioritize profile.
+                merged_groups = list(profile_groups_map.values())
+                profile_canonicals = set(profile_groups_map.keys())
+                for key, aliases in ALIAS_EXPANSIONS.items():
+                    if key not in profile_canonicals and not ({key} | set(aliases)).intersection(profile.aliases.keys()):
+                        merged_groups.append({key} | set(aliases))
+                return merged_groups
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Failed to load dynamic expansion groups for book {book_id}: {e}")
+            
+        return groups
+
+    def _get_all_terms(self, book_id: str) -> set[str]:
+        groups = self._get_expansion_groups(book_id)
+        terms = set()
+        for group in groups:
+            terms.update(group)
+        return terms
 
     def rewrite(
         self,
         query: str,
         scope: Scope,
         history: list[ConversationTurn],
+        book_id: str = "",
     ) -> RewrittenQuery:
         parts: list[str] = [query]
         expansions: list[str] = []
 
         # 1) 别名扩展
-        for key, aliases in ALIAS_EXPANSIONS.items():
-            if key in query:
-                expansions.append(f"{key}→{'、'.join(aliases)}")
-                parts.append(" ".join(aliases))
+        groups = self._get_expansion_groups(book_id)
+        for group in groups:
+            matched_members = [member for member in group if member in query]
+            if matched_members:
+                expansion_terms = [member for member in group if member not in query]
+                if expansion_terms:
+                    expansions.append(f"{'、'.join(matched_members)}→{'、'.join(expansion_terms)}")
+                    parts.append(" ".join(expansion_terms))
 
         # 1.5) 语义扩展：将模糊问题转换为具体关键词
         for pattern, keywords in SEMANTIC_EXPANSIONS:
@@ -114,8 +163,10 @@ class QueryRewriter:
                 parts.append(expanded)
 
         # 2) 指代消解（从最近对话历史中推断代词指向）
-        recent_context = self._extract_recent_context(history)
-        if recent_context:
+        all_terms = self._get_all_terms(book_id)
+        recent_context = self._extract_recent_context(history, all_terms)
+        is_fanren = not book_id or "凡人" in book_id
+        if recent_context and is_fanren:
             for pattern, replacement in RECENT_TOPIC_RES:
                 if pattern.search(query):
                     expansions.append(f"指代消解→{replacement}")
@@ -129,7 +180,7 @@ class QueryRewriter:
 
         # 4) 从对话历史中提取最近提到的人物/关键词
         if history:
-            history_terms = self._extract_history_terms(history)
+            history_terms = self._extract_history_terms(history, all_terms)
             if history_terms:
                 expansions.append(f"历史上下文→{history_terms}")
                 parts.append(history_terms)
@@ -141,26 +192,26 @@ class QueryRewriter:
             expansions=expansions,
         )
 
-    def _extract_recent_context(self, history: list[ConversationTurn]) -> str:
+    def _extract_recent_context(self, history: list[ConversationTurn], terms: set[str]) -> str:
         """从最近2轮对话中提取关键名词"""
-        terms: list[str] = []
+        matched: list[str] = []
         for turn in history[-4:]:
             if turn.role != "assistant":
                 continue
             content = turn.content
-            for key in ALIAS_EXPANSIONS:
-                if key in content and key not in terms:
-                    terms.append(key)
-        return " ".join(terms[:5])
+            for key in terms:
+                if key in content and key not in matched:
+                    matched.append(key)
+        return " ".join(matched[:5])
 
-    def _extract_history_terms(self, history: list[ConversationTurn]) -> str:
+    def _extract_history_terms(self, history: list[ConversationTurn], terms: set[str]) -> str:
         """从对话历史中提取用户关注的人物和实体"""
-        terms: list[str] = []
+        matched: list[str] = []
         combined = " ".join(turn.content for turn in history if turn.role == "user")
-        for key in ALIAS_EXPANSIONS:
-            if key in combined and key not in terms:
-                terms.append(key)
-        return " ".join(terms[:5])
+        for key in terms:
+            if key in combined and key not in matched:
+                matched.append(key)
+        return " ".join(matched[:5])
 
 
 # ── 记忆与规划 ──────────────────────────────────────────────

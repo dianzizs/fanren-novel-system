@@ -1,0 +1,106 @@
+{
+  "project": "小王一号",
+  "branchName": "ralph/vector-search-integration",
+  "description": "Vector search integration — complete remaining review fixes: wire reranker into retrieval pipeline, add missing tests, documentation improvements",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Recreate reranker module and wire into retrieval pipeline",
+      "description": "As a user, I want the RuleBasedReranker active during retrieval so search results are reranked for better relevance.",
+      "acceptanceCriteria": [
+        "Restore novel_system/reranker/ module (base.py, rule_based.py, factory.py, __init__.py) from git history (git checkout HEAD -- novel_system/reranker/)",
+        "HybridRetriever.__init__ accepts optional reranker: BaseReranker | None parameter",
+        "HybridRetriever.retrieve() applies reranking after orchestrator returns hits",
+        "NovelSystemService creates RuleBasedReranker and passes it to HybridRetriever",
+        "Reranker disableable via config (reranker_type: 'none')",
+        "Chapter scope passed to reranker.rerank() when available",
+        "python -m pytest tests/ -x passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Add reranker unit tests and fix neutral score",
+      "description": "As a developer, I need tests for RuleBasedReranker and the neutral score for missing chapter data should be 0.0 not 0.5.",
+      "acceptanceCriteria": [
+        "New file tests/test_reranker.py",
+        "Test: rerank empty candidates returns empty list",
+        "Test: rerank with mock RetrievalHit returns sorted by final_score",
+        "Test: entity match scoring boosts score when query entities in doc",
+        "Test: chapter relevance — doc near scope center scores higher",
+        "Test: target type weights — character_card > recent_plot",
+        "Test: is_ready returns True",
+        "_compute_chapter_relevance returns 0.0 when scope is None or empty",
+        "_compute_chapter_relevance returns 0.0 when no chapter info in doc",
+        "python -m pytest tests/test_reranker.py -x passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Add _normalize_book_id unit tests",
+      "description": "As a developer, I need unit tests for the _normalize_book_id function in api.py.",
+      "acceptanceCriteria": [
+        "New tests in tests/test_book_import_artifacts.py or separate file",
+        "Test: single-encoded ID returns unchanged",
+        "Test: double-encoded ID decodes correctly",
+        "Test: triple-encoded ID decodes correctly",
+        "Test: non-ASCII ID passes through unchanged",
+        "Test: plain ASCII ID returns unchanged",
+        "python -m pytest tests/ -x passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Add _extract_key_terms unit tests",
+      "description": "As a developer, I need tests for the key term extraction logic in SearchOrchestrator.",
+      "acceptanceCriteria": [
+        "New file tests/test_key_terms.py",
+        "Test: extracts nouns from Chinese query",
+        "Test: extracts quoted terms as exact matches",
+        "Test: filters stopwords",
+        "Test: returns empty list for pure stopword query",
+        "python -m pytest tests/test_key_terms.py -x passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Add logging to list_books retry and FAISS docstrings",
+      "description": "As a developer, I need the list_books retry loop to log warnings on JSONDecodeError, and FAISS delete/search docstrings to document limitations.",
+      "acceptanceCriteria": [
+        "list_books retry logs warning on each JSONDecodeError with manifest path",
+        "FAISSVectorStore.delete() docstring states logical-delete limitation",
+        "FAISSVectorStore.compact() handles missing xb attribute with warning",
+        "FAISSVectorStore.search() docstring documents filter post-application limitation",
+        "python -m pytest tests/ -x passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Final verification — full test suite pass",
+      "description": "As a developer, I need to verify the entire test suite passes and the branch is merge-ready.",
+      "acceptanceCriteria": [
+        "python -m pytest tests/ -x passes with 0 failures",
+        "No from .service_shared import * anywhere in codebase",
+        "No duplicated vector index building between indexing.py and service.py",
+        "Reranker module exists and is wired into retrieval pipeline"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

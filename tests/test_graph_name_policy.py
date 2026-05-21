@@ -14,6 +14,7 @@ from novel_system.graph_name_policy import (
     auto_detect_book,
     load_whitelist_config,
     reset_whitelist_config_cache,
+    normalize_name_with_profile,
     GRAPH_WHITELIST,
 )
 
@@ -98,6 +99,52 @@ class TestFilterCandidatesWithEvidence:
         result_wide = filter_candidates_with_evidence(wide_span)
         result_narrow = filter_candidates_with_evidence(narrow_span)
         assert result_wide[0]["score"] > result_narrow[0]["score"]
+
+
+# ---------------------------------------------------------------------------
+# normalize_name_with_profile
+# ---------------------------------------------------------------------------
+
+class TestNormalizeNameWithProfile:
+
+    def test_suffix_normalization(self):
+        """带后缀的名字应规范化为已知基础名，如 '韩立现' -> '韩立'。"""
+        known = {"韩立"}
+        assert normalize_name_with_profile("韩立现", known) == "韩立"
+
+    def test_noise_word_returns_none(self):
+        """噪声词如 '时间' 应返回 None。"""
+        known = {"韩立"}
+        assert normalize_name_with_profile("时间", known) is None
+
+    def test_known_name_passes_validation(self):
+        """已知名字通过 looks_like_graph_name 验证后应返回自身。"""
+        known = {"韩立"}
+        assert normalize_name_with_profile("韩立", known) == "韩立"
+
+    def test_noise_in_known_names_rejected(self):
+        """混入 known_names 的噪声词应被拒绝，不应绕过验证。"""
+        known = {"时间", "韩立"}
+        assert normalize_name_with_profile("时间", known) is None
+
+    def test_empty_name_returns_none(self):
+        """空字符串或纯空白应返回 None。"""
+        assert normalize_name_with_profile("", set()) is None
+        assert normalize_name_with_profile("  ", set()) is None
+
+    def test_alias_resolution(self):
+        """别名应解析为规范名。"""
+        profile = GraphProfile(book_id="test", aliases={"二愣子": "韩立"})
+        assert normalize_name_with_profile("二愣子", set(), profile) == "韩立"
+
+    def test_seed_name_returns_self(self):
+        """种子名应直接返回自身。"""
+        profile = GraphProfile(book_id="test", character_seeds={"韩立"})
+        assert normalize_name_with_profile("韩立", set(), profile) == "韩立"
+
+    def test_non_name_returns_none(self):
+        """非人名应返回 None。"""
+        assert normalize_name_with_profile("的韩", {"韩立"}) is None
 
 
 # ---------------------------------------------------------------------------

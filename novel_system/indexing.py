@@ -558,6 +558,12 @@ class BookIndexRepository:
             key=lambda item: (len(chapter_hits[item]), frequency[item]),
             reverse=True,
         )[:220]
+
+        # LLM-based noise filtering: let MiniMax classify which names are real person names
+        llm_confirmed = self._filter_names_with_llm(ranked_names)
+        if llm_confirmed:
+            ranked_names = [n for n in ranked_names if n in llm_confirmed]
+
         docs: list[dict[str, Any]] = []
         for name in ranked_names:
             chapters_list = sorted(set(chapter_hits[name]))
@@ -628,6 +634,11 @@ class BookIndexRepository:
             name = card["name"]
             if name in evidence:
                 evidence[name].has_scene_evidence = True
+
+        # LLM-based noise filtering: remove noise words from candidates
+        llm_confirmed = self._filter_names_with_llm(list(evidence.keys()))
+        if llm_confirmed:
+            evidence = {k: v for k, v in evidence.items() if k in llm_confirmed}
 
         # Filter using three-evidence strategy
         filtered = filter_candidates_with_evidence(evidence, profile)
@@ -948,6 +959,62 @@ class BookIndexRepository:
             score += 0.5
 
         return score
+
+    def _filter_names_with_llm(self, names: list[str], batch_size: int = 50) -> set[str]:
+        """Use MiniMax LLM to filter candidate names, keeping only real person names.
+
+        Args:
+            names: Candidate names to filter.
+            batch_size: Number of names per LLM request.
+
+        Returns:
+            Set of names classified as person names. Returns all input names
+            as-is if the LLM client is not available or any call fails.
+        """
+        from .llm import MiniMaxClient
+
+        client = MiniMaxClient(self.config)
+        if not client.enabled:
+            logger.info("MINIMAX_API_KEY not configured, skipping LLM name filtering")
+            return set(names)
+
+        confirmed: set[str] = set()
+        for i in range(0, len(names), batch_size):
+            batch = names[i : i + batch_size]
+            name_list = "、".join(batch)
+            prompt = (
+                "你是一个小说文本分析助手。下面是从一部小说中提取的候选人物名称列表，请判断哪些是真实的人名（包括外号、尊称），"
+                "哪些是噪声词（如时间词、动词、普通名词、形容词等非人名词语）。\n\n"
+                f"候选名称：{name_list}\n\n"
+                "请只输出真实的人名，用顿号（、）分隔，不要输出任何其他内容。如果全部都不是人名，请输出'无'。\n\n"
+                "示例：\n"
+                "输入：韩立、时间、南宫婉、成功、银月、方法\n"
+                "输出：韩立、南宫婉、银月\n\n"
+                "输入：章完、许多、准备、陈巧倩\n"
+                "输出：陈巧倩"
+            )
+            try:
+                response = client.chat(
+                    [{"role": "user", "content": prompt}],
+                    temperature=0.1,
+                    max_tokens=300,
+                )
+                result = response.content.strip()
+                if result and result != "无":
+                    for name in result.replace("，", "、").split("、"):
+                        name = name.strip()
+                        if name:
+                            confirmed.add(name)
+            except Exception:
+                logger.warning(
+                    "LLM name filtering failed for batch starting at %d, "
+                    "falling back to unfiltered names",
+                    i,
+                    exc_info=True,
+                )
+                return set(names)
+
+        return confirmed
 
     def _extract_person_names(self, text: str) -> list[str]:
         names = []

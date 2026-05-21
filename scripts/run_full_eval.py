@@ -137,9 +137,9 @@ def main():
         try:
             pred = run_prediction(case, service)
             predictions[case_id] = pred
-            print("✓")
+            print("[OK]")
         except Exception as e:
-            print(f"✗ 错误: {e}")
+            print(f"[FAIL] 错误: {e}")
             predictions[case_id] = {
                 "id": case_id,
                 "answer": "",

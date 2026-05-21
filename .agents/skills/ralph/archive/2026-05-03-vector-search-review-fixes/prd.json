@@ -1,0 +1,145 @@
+{
+  "project": "小王一号",
+  "branchName": "ralph/vector-search-integration",
+  "description": "Code review fixes for vector-search-integration branch — addresses critical, moderate, and minor findings from code review vs main",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "消除 service.py 与 indexing.py 重复的向量索引构建逻辑",
+      "description": "As a backend developer, I want vector index building consolidated into one code path so that bug fixes only need to happen once.",
+      "acceptanceCriteria": [
+        "_run_book_index() 不再独立实现 FAISS 索引构建，改为调用 build_from_txt() 或共享方法",
+        "hashlib import 移至模块级（service.py 和 indexing.py）",
+        "两条索引触发路径（start-index 和 index）产出相同结果",
+        "现有测试通过"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Extracted _build_vector_indexes() shared method on BookIndexRepository; build_from_txt() and _run_book_index() both delegate to it. Moved import hashlib to module level in indexing.py (service.py no longer needs it). All 243 tests pass."
+    },
+    {
+      "id": "US-002",
+      "title": "修复 FAISS delete 软删除正确性问题",
+      "description": "As a retrieval engineer, I want FAISS delete to actually prevent deleted vectors from appearing in search results.",
+      "acceptanceCriteria": [
+        "delete() 后 search() 不再返回已删除向量",
+        "count() 与实际可搜索向量数一致",
+        "新增测试验证 delete 后 search 不返回已删除项",
+        "现有测试通过"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Added _deleted_indices set to track soft-deleted FAISS indices. delete() now populates this set. search() explicitly filters out indices in _deleted_indices before mapping to IDs. Auto-compact triggers when deletion ratio exceeds 50%. count() returns len(_id_to_idx) which is accurate. save/load persist _deleted_indices for correctness across restarts. Added 3 new tests: test_delete_then_search, test_delete_all_then_search, test_delete_count_consistency. All 246 tests pass."
+    },
+    {
+      "id": "US-003",
+      "title": "用 graph_name_policy 替换 orchestrator 中硬编码角色名",
+      "description": "As a retrieval engineer, I want character name weights to come from graph_name_policy instead of a hardcoded list so the scoring logic works for any book.",
+      "acceptanceCriteria": [
+        "orchestrator.py 中 [\"韩立\", \"张铁\", \"墨大夫\", \"三叔\"] 硬编码列表删除",
+        "改为从 graph_name_policy.GRAPH_CANON_SEEDS 或 graph_profile 获取人名集合",
+        "权重逻辑保持不变（人名权重 0.5）",
+        "现有测试通过"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Replaced hardcoded [\"韩立\", \"张铁\", \"墨大夫\", \"三叔\"] list with GRAPH_CANON_SEEDS import from graph_name_policy. Weight logic (0.5 for character names) unchanged. All 246 tests pass."
+    },
+    {
+      "id": "US-004",
+      "title": "接入或移除未使用的 reranker 模块",
+      "description": "As a developer, I want the reranker module to either be wired into the retrieval pipeline or removed to avoid dead code.",
+      "acceptanceCriteria": [
+        "删除 novel_system/reranker/ 目录（base.py, rule_based.py, factory.py, __init__.py, cross_encoder.py）",
+        "删除所有对 reranker 模块的 import 引用",
+        "不存在未使用的完整模块",
+        "现有测试通过"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Deleted novel_system/reranker/ directory (base.py, rule_based.py, factory.py, __init__.py, cross_encoder.py). Deleted test files test_cross_encoder_reranker.py and test_reranker_integration.py. Removed reranker-related fields (rerank_enabled, reranker_type, cross_encoder_model, cross_encoder_device, cross_encoder_batch_size) from AppConfig. Removed reranker initialization and usage from SearchOrchestrator. Cleaned reranker config from 4 test files. All 228 tests pass."
+    },
+    {
+      "id": "US-005",
+      "title": "修复各模块 import 问题",
+      "description": "As a developer, I want imports to be at module level and star imports eliminated for clarity and performance.",
+      "acceptanceCriteria": [
+        "orchestrator.py 中 jieba/jieba.posseg 移至模块级 import",
+        "graph_service.py 中 from .service_shared import * 改为显式 import（或确认 service_shared.py 存在且导出明确）",
+        "无 import 语句在函数体/循环内（除延迟加载场景）",
+        "现有测试通过"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Moved import re, import jieba, import jieba.posseg as pseg from _extract_key_terms() body to module-level in orchestrator.py. graph_service.py already uses explicit imports (no star import present). All 228 tests pass."
+    },
+    {
+      "id": "US-006",
+      "title": "改进 _dense_search 的 over-fetch 策略",
+      "description": "As a retrieval engineer, I want the dense search over-fetch multiplier to be adaptive instead of a hardcoded 10x.",
+      "acceptanceCriteria": [
+        "search_k 不再使用固定 top_k * 10",
+        "根据 chapter_scope 的大小自适应调整（如按 chunk 总数比例）",
+        "或改为可配置参数（config 中可调整）",
+        "现有测试通过"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "Added dense_search_overfetch_factor to AppConfig (env var DENSE_SEARCH_OVERFETCH_FACTOR, default 10). SearchOrchestrator.__init__ now accepts overfetch_factor parameter. HybridRetriever passes the config value through. service.py passes self.config.dense_search_overfetch_factor when creating HybridRetriever. All 228 tests pass."
+    },
+    {
+      "id": "US-007",
+      "title": "整理 api.py 中 _normalize_book_id 的位置和逻辑",
+      "description": "As a developer, I want _normalize_book_id defined in the correct location with documented rationale.",
+      "acceptanceCriteria": [
+        "_normalize_book_id 移至 imports 之后的函数定义区域",
+        "triple-decode 循环添加注释说明为何需要 3 次迭代",
+        "现有测试通过"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": "Moved _normalize_book_id from between _sanitize_book_id and CORSMiddleware import to after all imports (before create_app). Added comment on the for-loop explaining the client-side double/triple-encoding workaround. All 228 tests pass."
+    },
+    {
+      "id": "US-008",
+      "title": "修复 rule_based.py 中过宽的实体匹配正则",
+      "description": "As a retrieval engineer, I want entity matching to not treat common Chinese words like 什么/怎么 as character names.",
+      "acceptanceCriteria": [
+        "正则不再匹配 什么/怎么/为什么 等常见非实体词",
+        "可通过停用词过滤或改进正则模式实现",
+        "新增测试验证常见非实体词不被匹配",
+        "现有测试通过"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": "Original rule_based.py deleted in US-004; same overly-broad regex existed in validator.py (_extract_keywords, _check_world_rule_violations, _split_event_text). Replaced regex-based _extract_keywords with jieba word segmentation for correct word boundary handling. Added CHINESE_NON_ENTITY_WORDS frozenset (~90 common non-entity words: question words, pronouns, demonstratives, common verbs, conjunctions, etc.) and _filter_non_entities() helper. Applied stopword filtering to all 3 call sites. Added 10 new tests in test_stopword_filter.py covering question words, pronouns, demonstratives, verbs, conjunctions, entity preservation, mixed input, and integration tests. Updated test_hallucination_detection test data to work with improved jieba segmentation. All 238 tests pass."
+    },
+    {
+      "id": "US-009",
+      "title": "修复 MockEmbeddingProvider 测试中的非确定性 hash",
+      "description": "As a developer, I want test embedding seeds to be deterministic across processes so CI doesn't flake.",
+      "acceptanceCriteria": [
+        "test_vector_retrieval.py 中 hash(text) 改为 hashlib.md5(text.encode()).digest() 等确定性方案",
+        "np.random.seed 使用确定性值",
+        "现有测试通过"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": "Replaced non-deterministic hash(text) with int(hashlib.md5(text.encode()).hexdigest(), 16) % (2**31) in MockEmbeddingProvider.embed(). Added import hashlib at module level. All 7 tests in test_vector_retrieval.py pass."
+    },
+    {
+      "id": "US-010",
+      "title": "验证 max_tokens 从 900 降到 300 不影响回答质量",
+      "description": "As a product owner, I want to confirm the max_tokens reduction doesn't truncate complex answers.",
+      "acceptanceCriteria": [
+        "构造 2-3 个复杂分析类查询（如角色关系分析、情节梳理），用 300 tokens 运行",
+        "如回答明显截断或不完整，调整为 500 tokens",
+        "如 300 tokens 足够，添加注释说明选择 300 的理由",
+        "现有测试通过"
+      ],
+      "priority": 10,
+      "passes": true,
+      "notes": "300 tokens 足够。prompt 模板明确要求 1-2 句简洁中文答案（约 50-150 字），即使 analysis 类任务带简短证据也在 300 tokens 内。已在 service.py:1197 添加注释说明选择 300 的理由。所有 238 测试通过。"
+    }
+  ]
+}
