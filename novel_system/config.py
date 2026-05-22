@@ -66,6 +66,10 @@ class AppConfig:
     # Reranker 配置
     rerank_enabled: bool = True
     reranker_type: str = "rule_based"
+    # Mimo 配置（Anthropic-compatible 备用 LLM）
+    mimo_api_key: str = ""
+    mimo_base_url: str = "https://token-plan-cn.xiaomimimo.com/anthropic"
+    mimo_chat_model: str = "mimo-v2.5"
 
     @classmethod
     def load(cls) -> "AppConfig":
@@ -102,6 +106,12 @@ class AppConfig:
                 "MINIMAX_CHAT_MODEL",
                 "MiniMax-m2.7-HighSpeed",
             ),
+            mimo_api_key=(os.getenv("MIMO_API_KEY", "") or os.getenv("ANTHROPIC_AUTH_TOKEN", "")).strip(),
+            mimo_base_url=(os.getenv(
+                "MIMO_BASE_URL",
+                "",
+            ) or os.getenv("ANTHROPIC_BASE_URL", "") or "https://token-plan-cn.xiaomimimo.com/anthropic").rstrip("/"),
+            mimo_chat_model=(os.getenv("MIMO_CHAT_MODEL", "") or "mimo-v2.5").strip(),
             # 本地 Embedding 配置
             embedding_provider=os.getenv("EMBEDDING_PROVIDER", "local_openvino"),
             local_embedding_model=os.getenv(
