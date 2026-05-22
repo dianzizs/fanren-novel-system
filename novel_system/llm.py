@@ -122,3 +122,128 @@ class MiniMaxClient:
                     logger.error(f"LLM API call failed permanently after {self.MAX_RETRIES} retries.")
                     raise
 
+
+class MimoClient:
+    """Mimo API 客户端，遵循 Anthropic-compatible 协议。
+
+    通过 Xiaomi Mimo 的 Anthropic-compatible 网关调用 LLM。
+    支持带重试的对话调用，自动提取 system 消息，并规范化 token 用量字段。
+    """
+
+    MAX_RETRIES = 3
+    RETRY_DELAYS = [1, 2, 4]  # 指数退避：1s, 2s, 4s
+
+    def __init__(self, config: AppConfig) -> None:
+        self.api_key = config.mimo_api_key
+        self.base_url = config.mimo_base_url.rstrip("/")
+        self.model = config.mimo_chat_model
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.api_key)
+
+    def chat(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        temperature: float = 0.2,
+        max_tokens: int = 900,
+    ) -> LLMResponse:
+        """调用 Mimo Anthropic-compatible chat API。
+
+        Args:
+            messages: 对话消息列表（支持 system/user/assistant role）
+            temperature: 生成温度
+            max_tokens: 最大生成 token 数
+
+        Returns:
+            LLMResponse（含规范化后的 token 使用量）
+
+        Raises:
+            RuntimeError: API 未配置时抛出
+        """
+        if not self.enabled:
+            raise RuntimeError(
+                "MIMO_API_KEY / ANTHROPIC_AUTH_TOKEN is not configured"
+            )
+
+        # Anthropic 协议中 system 指令为顶层参数，需从 messages 中提取
+        system_prompt: str | None = None
+        formatted_messages: list[dict[str, str]] = []
+        for msg in messages:
+            if msg["role"] == "system":
+                system_prompt = msg["content"]
+            else:
+                formatted_messages.append({"role": msg["role"], "content": msg["content"]})
+
+        payload: dict = {
+            "model": self.model,
+            "messages": formatted_messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        if system_prompt:
+            payload["system"] = system_prompt
+
+        headers = {
+            "x-api-key": self.api_key,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+        }
+
+        for attempt in range(self.MAX_RETRIES + 1):
+            try:
+                response = requests.post(
+                    f"{self.base_url}/v1/messages",
+                    headers=headers,
+                    json=payload,
+                    timeout=120,
+                )
+
+                if response.status_code in (429, 500, 502, 503, 504):
+                    if attempt < self.MAX_RETRIES:
+                        delay = self.RETRY_DELAYS[attempt]
+                        logger.warning(
+                            f"Mimo API returned {response.status_code}. "
+                            f"Retrying in {delay}s (attempt {attempt + 1}/{self.MAX_RETRIES})..."
+                        )
+                        time.sleep(delay)
+                        continue
+
+                response.raise_for_status()
+                res_data: dict = response.json()
+
+                # 从 content blocks 中提取第一个 text block
+                content = ""
+                for block in res_data.get("content", []):
+                    if block.get("type") == "text":
+                        content = block.get("text", "")
+                        break
+
+                # 规范化 token 用量：Anthropic 格式 → 系统通用格式
+                usage_data = res_data.get("usage", {})
+                prompt_tokens = (
+                    usage_data.get("input_tokens", 0)
+                    + usage_data.get("cache_read_input_tokens", 0)
+                )
+                completion_tokens = usage_data.get("output_tokens", 0)
+                usage = {
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "total_tokens": prompt_tokens + completion_tokens,
+                }
+
+                result = THINK_TAG_RE.sub("", content).strip()
+                return LLMResponse(content=result, usage=usage)
+
+            except (requests.exceptions.RequestException, KeyError, ValueError) as e:
+                if attempt < self.MAX_RETRIES:
+                    delay = self.RETRY_DELAYS[attempt]
+                    logger.warning(
+                        f"Mimo API call failed: {e}. "
+                        f"Retrying in {delay}s (attempt {attempt + 1}/{self.MAX_RETRIES})..."
+                    )
+                    time.sleep(delay)
+                    continue
+                logger.error(f"Mimo API call failed permanently after {self.MAX_RETRIES} retries.")
+                raise
