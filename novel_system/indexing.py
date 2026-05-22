@@ -100,6 +100,7 @@ BAD_NAME_ENDINGS = set(
     "的了呢啊呀吗吧着将会是在与及又仍把被向到进出上下来去回过后中里外前后时处所带让"
     "心一一不这也就听有也和自见看没还脸对大才等并望皱想说道做给比往走更被叫早已正用"
     "觉知该当从只已又如为何但却虽再向能需可应最都"
+    "撞退杀打飞跃跑笑怒死伤闪躲"
 )
 
 # Event sentence recognition patterns
@@ -172,6 +173,8 @@ class BookIndexRepository:
         self.config = config
         self._embedding_provider = embedding_provider
         self._cache: dict[str, LoadedBookIndex] = {}
+        self._active_llm_extractions: dict[int, list[Any]] = {}
+        self._active_book_id: str = ""
 
     def list_books(self) -> list[dict[str, Any]]:
         books: list[dict[str, Any]] = []
@@ -266,14 +269,115 @@ class BookIndexRepository:
             raise FileNotFoundError(f"Artifact {artifact_name} not found for {book_id}")
         return json.loads(path.read_text(encoding="utf-8"))
 
-    def build_from_txt(self, book_id: str, title: str, source_path: Path) -> dict[str, Any]:
+    @property
+    def llm(self) -> "MiniMaxClient":
+        from .llm import MiniMaxClient
+        return MiniMaxClient(self.config)
+
+    def _build_extraction_chunks(self, chapter_text: str, chunk_size: int = 1800, overlap: int = 250) -> list[str]:
+        chunks = []
+        start = 0
+        while start < len(chapter_text):
+            end = start + chunk_size
+            chunk = chapter_text[start:end]
+            chunks.append(chunk)
+            if end >= len(chapter_text):
+                break
+            start += chunk_size - overlap
+        return chunks
+
+    def _extract_structured_from_llm(
+        self,
+        chunk_text: str,
+        token_callback: Optional[Any] = None,
+    ) -> Optional["ChapterChunkExtraction"]:
+        if not self.llm.enabled:
+            return None
+        
+        from .extraction_models import ChapterChunkExtraction
+        import json
+        
+        system_prompt = (
+            "你是一个专业的小说内容分析助手。你需要从给定的武侠/修仙小说片段中，提取出登场或被提及的所有人物（角色）、人物之间的关系、以及发生的关键事件。\n\n"
+            "请务必遵守以下规则：\n"
+            "1. 提取的角色姓名必须是小说中真实的人名或称呼（例如：韩立、南宫婉、墨大夫、厉飞雨）。\n"
+            "2. 别名/称呼：提取角色在该段落中被提及的其他称呼或别名（例如：韩立被称为“二愣子”、“师弟”）。\n"
+            "3. 排除噪音词：绝对不能提取普通名词、动作、状态、时间词或拼写错误的词语作为角色姓名（例如：“韩立撞”、“许多人”、“时间”、“成功”、“方法”等绝对不能作为角色）。\n"
+            "4. 关系提取：提取本段提及的角色之间的关系（例如：韩立与墨大夫是师徒关系，韩立与厉飞雨是好友关系）。\n"
+            "5. 事件提取：提取本段中发生的关键剧情事件，并标明参与者。\n\n"
+            "请以严格的 JSON 格式输出，不要包含 markdown 格式标记，也不要包含任何除 JSON 外的代码或说明。格式如下：\n"
+            "{\n"
+            "  \"characters\": [\n"
+            "    {\"name\": \"角色名\", \"aliases\": [\"别名1\", \"别名2\"], \"description\": \"特征描述\"}\n"
+            "  ],\n"
+            "  \"relationships\": [\n"
+            "    {\"source\": \"角色A\", \"target\": \"角色B\", \"description\": \"关系描述\"}\n"
+            "  ],\n"
+            "  \"events\": [\n"
+            "    {\"description\": \"事件描述\", \"participants\": [\"角色A\", \"角色B\"]}\n"
+            "  ]\n"
+            "}"
+        )
+        
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"小说片段：\n{chunk_text}"}
+        ]
+        
+        try:
+            response = self.llm.chat(messages, temperature=0.1, max_tokens=1500)
+            if token_callback and hasattr(response, 'usage') and response.usage:
+                token_callback(response.usage)
+            
+            clean_content = response.content.strip()
+            # strip ```json and ``` if present
+            if clean_content.startswith("```"):
+                lines = clean_content.splitlines()
+                if lines[0].startswith("```json") or lines[0].startswith("```"):
+                    lines = lines[1:]
+                if lines and lines[-1].strip() == "```":
+                    lines = lines[:-1]
+                clean_content = "\n".join(lines).strip()
+            
+            data = json.loads(clean_content)
+            return ChapterChunkExtraction.model_validate(data)
+        except Exception as e:
+            logger.warning(f"LLM structured extraction failed: {e}", exc_info=True)
+            return None
+
+    def prewarm_llm_extractions(
+        self,
+        chapters: list[dict[str, Any]],
+        book_id: str,
+        token_callback: Optional[Any] = None,
+    ) -> None:
+        """预先使用结构化 LLM 提取所有章节的角色、关系和事件，并缓存。"""
+        self._active_book_id = book_id
+        self._active_llm_extractions = {}
+        if not self.llm.enabled:
+            return
+
+        for chapter in chapters:
+            ch_num = chapter["chapter"]
+            self._active_llm_extractions[ch_num] = []
+            large_chunks = self._build_extraction_chunks(chapter["text"])
+            for chunk in large_chunks:
+                ext = self._extract_structured_from_llm(chunk, token_callback)
+                if ext:
+                    self._active_llm_extractions[ch_num].append(ext)
+
+    def build_from_txt(self, book_id: str, title: str, source_path: Path, token_callback: Optional[Any] = None) -> dict[str, Any]:
         raw_text = source_path.read_text(encoding="utf-8")
         chapters = self._parse_chapters(raw_text)
+        
+        # Warm up LLM extraction cache if enabled
+        self.prewarm_llm_extractions(chapters, book_id, token_callback)
+        
         chunks = self._build_chunks(chapters)
         chapter_summaries = self._build_chapter_summaries(chapters)
         events = self._build_event_timeline(chapters, chapter_summaries)
-        character_cards = self._build_character_cards(chapters, book_id)
-        character_registry = self._build_character_registry(chapters, character_cards, book_id)
+        character_cards = self._build_character_cards(chapters, book_id, token_callback)
+        character_registry = self._build_character_registry(chapters, character_cards, book_id, token_callback)
         relationships = self._build_relationships(chapters, character_cards)
         world_rules = self._build_world_rules(chapters)
         canon_memory = self._build_canon_memory(chapter_summaries, events)
@@ -482,36 +586,59 @@ class BookIndexRepository:
         chapters: list[dict[str, Any]],
         chapter_summaries: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
+        has_llm = False
+        if hasattr(self, "_active_llm_extractions") and self._active_llm_extractions:
+            has_llm = True
+
         summary_map = {item["chapter"]: item["text"] for item in chapter_summaries}
         docs: list[dict[str, Any]] = []
         for chapter in chapters:
-            sentences = self._split_sentences(chapter["text"])
-            # Score sentences for event significance
-            scored = []
-            for sentence in sentences:
-                compact = sentence.strip()
-                if len(compact) < 12:
-                    continue
-                score = self._score_event_sentence(compact)
-                scored.append((score, compact))
+            ch_num = chapter["chapter"]
+            if has_llm and ch_num in self._active_llm_extractions and self._active_llm_extractions[ch_num]:
+                ext_list = self._active_llm_extractions[ch_num]
+                all_events = []
+                participants_set = set()
+                for ext in ext_list:
+                    for ev in ext.events:
+                        if ev.description:
+                            all_events.append(ev.description)
+                        for p in ev.participants:
+                            if p:
+                                participants_set.add(p)
+                if all_events:
+                    description = "；".join(all_events)
+                else:
+                    description = summary_map.get(ch_num, "")
+                participants = list(participants_set)[:6]
+            else:
+                sentences = self._split_sentences(chapter["text"])
+                # Score sentences for event significance
+                scored = []
+                for sentence in sentences:
+                    compact = sentence.strip()
+                    if len(compact) < 12:
+                        continue
+                    score = self._score_event_sentence(compact)
+                    scored.append((score, compact))
 
-            # Select top 3-5 sentences by score, prioritize higher scores
-            scored.sort(key=lambda x: x[0], reverse=True)
-            picked = []
-            total_len = 0
-            max_sentences = 5
-            max_total_len = 260
+                # Select top 3-5 sentences by score, prioritize higher scores
+                scored.sort(key=lambda x: x[0], reverse=True)
+                picked = []
+                total_len = 0
+                max_sentences = 5
+                max_total_len = 260
 
-            for score, sentence in scored:
-                if len(picked) >= max_sentences:
-                    break
-                if total_len + len(sentence) + 1 > max_total_len:
-                    break
-                picked.append(sentence)
-                total_len += len(sentence) + 1
+                for score, sentence in scored:
+                    if len(picked) >= max_sentences:
+                        break
+                    if total_len + len(sentence) + 1 > max_total_len:
+                        break
+                    picked.append(sentence)
+                    total_len += len(sentence) + 1
 
-            description = " ".join(picked) or summary_map.get(chapter["chapter"], "")
-            participants = self._extract_person_names(chapter["text"])[:6]
+                description = " ".join(picked) or summary_map.get(chapter["chapter"], "")
+                participants = self._extract_person_names(chapter["text"])[:6]
+
             docs.append(
                 {
                     "id": f"event-{chapter['chapter']}",
@@ -530,8 +657,9 @@ class BookIndexRepository:
         self,
         chapters: list[dict[str, Any]],
         book_id: str = "",
+        token_callback: Optional[Any] = None,
     ) -> list[dict[str, Any]]:
-        from .graph_name_policy import load_graph_profile
+        from .graph_name_policy import load_graph_profile, resolve_aliases_with_profile, looks_like_graph_name
 
         profile = load_graph_profile(book_id, self.config.data_dir / "books")
         # Build {canonical: [alias, ...]} from profile's {alias: canonical} mapping
@@ -539,65 +667,152 @@ class BookIndexRepository:
         for alias, canonical in profile.aliases.items():
             profile_alias_map.setdefault(canonical, []).append(alias)
 
-        chapter_hits: dict[str, list[int]] = defaultdict(list)
-        evidence_lines: dict[str, list[str]] = defaultdict(list)
-        frequency: Counter[str] = Counter()
-        for chapter in chapters:
-            names = set(self._extract_person_names(chapter["text"]))
-            for name in names:
-                chapter_hits[name].append(chapter["chapter"])
-            for line in chapter["paragraphs"]:
-                line_names = self._extract_person_names(line)
-                for name in line_names:
-                    frequency[name] += 1
-                    if len(evidence_lines[name]) < 6 and line not in evidence_lines[name]:
-                        evidence_lines[name].append(line[:120])
+        # Check if we have LLM extractions
+        has_llm = False
+        if hasattr(self, "_active_llm_extractions") and self._active_llm_extractions:
+            has_llm = True
 
-        ranked_names = sorted(
-            chapter_hits,
-            key=lambda item: (len(chapter_hits[item]), frequency[item]),
-            reverse=True,
-        )[:220]
+        if has_llm:
+            # Group characters from LLM extractions
+            char_data = defaultdict(lambda: {"aliases": set(), "descriptions": set(), "chapters": set(), "frequency": 0})
+            for ch_num, ext_list in self._active_llm_extractions.items():
+                for ext in ext_list:
+                    for char in ext.characters:
+                        c_name = char.name.strip()
+                        if not c_name or len(c_name) < 2 or len(c_name) > 10:
+                            continue
+                        
+                        canonical = resolve_aliases_with_profile(c_name, profile)
+                        # Filter obvious non-names unless in seeds
+                        if not looks_like_graph_name(canonical) and canonical not in profile.character_seeds:
+                            continue
 
-        # LLM-based noise filtering: let MiniMax classify which names are real person names
-        llm_confirmed = self._filter_names_with_llm(ranked_names)
-        if llm_confirmed:
-            ranked_names = [n for n in ranked_names if n in llm_confirmed]
+                        char_data[canonical]["frequency"] += 1
+                        char_data[canonical]["chapters"].add(ch_num)
+                        
+                        for alias in char.aliases:
+                            alias_clean = alias.strip()
+                            if alias_clean and alias_clean != canonical:
+                                char_data[canonical]["aliases"].add(alias_clean)
+                        
+                        if char.description:
+                            desc_clean = char.description.strip()
+                            if desc_clean:
+                                char_data[canonical]["descriptions"].add(desc_clean)
 
-        docs: list[dict[str, Any]] = []
-        for name in ranked_names:
-            chapters_list = sorted(set(chapter_hits[name]))
-            aliases = profile_alias_map.get(name, [])
-            alias_text = "、".join(aliases)
-            snippets = " ".join(evidence_lines[name][:3])
-            card_profile = f"姓名：{name}；首次出现章节：{chapters_list[0]}；相关章节：{chapters_list[:8]}。"
-            if alias_text:
-                card_profile += f" 别名/相关称呼：{alias_text}。"
-            if snippets:
-                card_profile += f" 证据摘要：{snippets}"
-            docs.append(
-                {
-                    "id": f"character-{name}",
-                    "chapter": chapters_list[0],
-                    "chapter_span": [chapters_list[0], chapters_list[-1]],
-                    "title": name,
-                    "target": "character_card",
-                    "text": card_profile[:420],
-                    "retrieval_text": card_profile[:420],  # 用于检索的文本字段
-                    "name": name,
-                    "canonical_name": name,  # 用于精确别名匹配
-                    "aliases": aliases,
-                    "chapters": chapters_list,
-                    "source": f"{name}人物卡",
-                }
-            )
-        return docs
+            # Build evidence lines from chapters
+            evidence_lines: dict[str, list[str]] = defaultdict(list)
+            for chapter in chapters:
+                for line in chapter["paragraphs"]:
+                    for canonical, info in char_data.items():
+                        names_to_check = {canonical} | info["aliases"] | set(profile_alias_map.get(canonical, []))
+                        if any(name in line for name in names_to_check if name):
+                            if len(evidence_lines[canonical]) < 6 and line not in evidence_lines[canonical]:
+                                evidence_lines[canonical].append(line[:120])
+
+            ranked_names = sorted(
+                char_data.keys(),
+                key=lambda item: (len(char_data[item]["chapters"]), char_data[item]["frequency"]),
+                reverse=True,
+            )[:220]
+
+            docs: list[dict[str, Any]] = []
+            for name in ranked_names:
+                info = char_data[name]
+                chapters_list = sorted(list(info["chapters"]))
+                profile_aliases = profile_alias_map.get(name, [])
+                all_aliases = sorted(list(info["aliases"] | set(profile_aliases)))
+                alias_text = "、".join(all_aliases)
+                desc_text = "；".join(sorted(list(info["descriptions"])))[:200]
+                snippets = " ".join(evidence_lines[name][:3])
+                
+                card_profile = f"姓名：{name}；首次出现章节：{chapters_list[0]}；相关章节：{chapters_list[:8]}。"
+                if desc_text:
+                    card_profile += f" 角色特征：{desc_text}。"
+                if alias_text:
+                    card_profile += f" 别名/相关称呼：{alias_text}。"
+                if snippets:
+                    card_profile += f" 证据摘要：{snippets}"
+                
+                docs.append(
+                    {
+                        "id": f"character-{name}",
+                        "chapter": chapters_list[0],
+                        "chapter_span": [chapters_list[0], chapters_list[-1]],
+                        "title": name,
+                        "target": "character_card",
+                        "text": card_profile[:420],
+                        "retrieval_text": card_profile[:420],
+                        "name": name,
+                        "canonical_name": name,
+                        "aliases": all_aliases,
+                        "chapters": chapters_list,
+                        "source": f"{name}人物卡",
+                    }
+                )
+            return docs
+
+        else:
+            chapter_hits: dict[str, list[int]] = defaultdict(list)
+            evidence_lines: dict[str, list[str]] = defaultdict(list)
+            frequency: Counter[str] = Counter()
+            for chapter in chapters:
+                names = set(self._extract_person_names(chapter["text"]))
+                for name in names:
+                    chapter_hits[name].append(chapter["chapter"])
+                for line in chapter["paragraphs"]:
+                    line_names = self._extract_person_names(line)
+                    for name in line_names:
+                        frequency[name] += 1
+                        if len(evidence_lines[name]) < 6 and line not in evidence_lines[name]:
+                            evidence_lines[name].append(line[:120])
+
+            ranked_names = sorted(
+                chapter_hits,
+                key=lambda item: (len(chapter_hits[item]), frequency[item]),
+                reverse=True,
+            )[:220]
+
+            # LLM-based noise filtering: let MiniMax classify which names are real person names
+            llm_confirmed = self._filter_names_with_llm(ranked_names, token_callback=token_callback)
+            if llm_confirmed:
+                ranked_names = [n for n in ranked_names if n in llm_confirmed]
+
+            docs: list[dict[str, Any]] = []
+            for name in ranked_names:
+                chapters_list = sorted(set(chapter_hits[name]))
+                aliases = profile_alias_map.get(name, [])
+                alias_text = "、".join(aliases)
+                snippets = " ".join(evidence_lines[name][:3])
+                card_profile = f"姓名：{name}；首次出现章节：{chapters_list[0]}；相关章节：{chapters_list[:8]}。"
+                if alias_text:
+                    card_profile += f" 别名/相关称呼：{alias_text}。"
+                if snippets:
+                    card_profile += f" 证据摘要：{snippets}"
+                docs.append(
+                    {
+                        "id": f"character-{name}",
+                        "chapter": chapters_list[0],
+                        "chapter_span": [chapters_list[0], chapters_list[-1]],
+                        "title": name,
+                        "target": "character_card",
+                        "text": card_profile[:420],
+                        "retrieval_text": card_profile[:420],  # 用于检索的文本字段
+                        "name": name,
+                        "canonical_name": name,  # 用于精确别名匹配
+                        "aliases": aliases,
+                        "chapters": chapters_list,
+                        "source": f"{name}人物卡",
+                    }
+                )
+            return docs
 
     def _build_character_registry(
         self,
         chapters: list[dict[str, Any]],
         character_cards: list[dict[str, Any]],
         book_id: str = "",
+        token_callback: Optional[Any] = None,
     ) -> list[dict[str, Any]]:
         """Build character registry with filtered candidates.
 
@@ -610,6 +825,7 @@ class BookIndexRepository:
             chapters: Parsed chapter data
             character_cards: Pre-built character cards
             book_id: Book identifier for loading graph profile
+            token_callback: Optional callback for tracking token usage
 
         Returns:
             List of character registry entries with canonical names and aliases
@@ -619,26 +835,51 @@ class BookIndexRepository:
             build_candidate_evidence_from_chapters,
             filter_candidates_with_evidence,
             load_graph_profile,
+            resolve_aliases_with_profile,
         )
 
         profile = load_graph_profile(book_id, self.config.data_dir / "books")
 
-        # Build evidence from chapters (frequency + chapter_span)
-        evidence = build_candidate_evidence_from_chapters(
-            chapters, self._extract_person_names
-        )
+        # Check if we have LLM extractions
+        has_llm = False
+        if hasattr(self, "_active_llm_extractions") and self._active_llm_extractions:
+            has_llm = True
+
+        if has_llm:
+            evidence: dict[str, CandidateEvidence] = {}
+            seen_in_chapter = defaultdict(set)
+            for ch_num, ext_list in self._active_llm_extractions.items():
+                for ext in ext_list:
+                    for char in ext.characters:
+                        c_name = char.name.strip()
+                        if not c_name or len(c_name) < 2 or len(c_name) > 10:
+                            continue
+                        
+                        canonical = resolve_aliases_with_profile(c_name, profile)
+                        if canonical not in evidence:
+                            evidence[canonical] = CandidateEvidence()
+                        
+                        evidence[canonical].frequency += 1
+                        if ch_num not in seen_in_chapter[canonical]:
+                            evidence[canonical].chapter_span += 1
+                            seen_in_chapter[canonical].add(ch_num)
+        else:
+            # Build evidence from chapters (frequency + chapter_span)
+            evidence = build_candidate_evidence_from_chapters(
+                chapters, self._extract_person_names
+            )
 
         # Mark scene evidence from character cards
-        card_names = {card["name"] for card in character_cards}
         for card in character_cards:
             name = card["name"]
             if name in evidence:
                 evidence[name].has_scene_evidence = True
 
-        # LLM-based noise filtering: remove noise words from candidates
-        llm_confirmed = self._filter_names_with_llm(list(evidence.keys()))
-        if llm_confirmed:
-            evidence = {k: v for k, v in evidence.items() if k in llm_confirmed}
+        if not has_llm:
+            # LLM-based noise filtering: remove noise words from candidates
+            llm_confirmed = self._filter_names_with_llm(list(evidence.keys()), token_callback=token_callback)
+            if llm_confirmed:
+                evidence = {k: v for k, v in evidence.items() if k in llm_confirmed}
 
         # Filter using three-evidence strategy
         filtered = filter_candidates_with_evidence(evidence, profile)
@@ -675,33 +916,87 @@ class BookIndexRepository:
         chapters: list[dict[str, Any]],
         character_cards: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
+        # Check if we have LLM extractions
+        has_llm = False
+        if hasattr(self, "_active_llm_extractions") and self._active_llm_extractions:
+            has_llm = True
+
         known_names = {card["name"] for card in character_cards[:100]}
-        pair_counter: Counter[tuple[str, str]] = Counter()
-        pair_chapters: dict[tuple[str, str], list[int]] = defaultdict(list)
-        for chapter in chapters:
-            names = sorted(set(name for name in self._extract_person_names(chapter["text"]) if name in known_names))
-            for index, left in enumerate(names):
-                for right in names[index + 1 :]:
-                    pair = (left, right)
-                    pair_counter[pair] += 1
-                    pair_chapters[pair].append(chapter["chapter"])
-        docs: list[dict[str, Any]] = []
-        for (left, right), count in pair_counter.most_common(180):
-            chapters_list = sorted(set(pair_chapters[(left, right)]))
-            docs.append(
-                {
-                    "id": f"rel-{left}-{right}",
-                    "chapter": chapters_list[0],
-                    "title": f"{left} / {right}",
-                    "target": "relationship_graph",
-                    "text": (
+
+        if has_llm:
+            from .graph_name_policy import load_graph_profile, resolve_aliases_with_profile
+            book_id = getattr(self, "_active_book_id", "")
+            profile = load_graph_profile(book_id, self.config.data_dir / "books")
+            
+            rel_counts = Counter()
+            rel_chapters = defaultdict(list)
+            rel_desc = defaultdict(set)
+            
+            for ch_num, ext_list in self._active_llm_extractions.items():
+                for ext in ext_list:
+                    for rel in ext.relationships:
+                        src_canonical = resolve_aliases_with_profile(rel.source.strip(), profile)
+                        tgt_canonical = resolve_aliases_with_profile(rel.target.strip(), profile)
+                        
+                        # Only keep relationships between known characters
+                        if src_canonical in known_names and tgt_canonical in known_names and src_canonical != tgt_canonical:
+                            pair = tuple(sorted([src_canonical, tgt_canonical]))
+                            rel_counts[pair] += 1
+                            rel_chapters[pair].append(ch_num)
+                            if rel.description:
+                                rel_desc[pair].add(rel.description.strip())
+                                
+            docs: list[dict[str, Any]] = []
+            for (left, right), count in rel_counts.most_common(180):
+                chapters_list = sorted(set(rel_chapters[(left, right)]))
+                descriptions = sorted(list(rel_desc[(left, right)]))
+                if descriptions:
+                    desc_text = "；".join(descriptions)[:200]
+                    text = f"关系对：{left} 与 {right}。互动描述：{desc_text}。共同出现于章节：{chapters_list[:10]}。"
+                else:
+                    text = (
                         f"关系对：{left} 与 {right} 在章节 {chapters_list[:10]} 共同出现 {count} 次，"
                         f"说明两者存在剧情关联。"
-                    ),
-                    "source": f"{left}-{right}关系",
-                }
-            )
-        return docs
+                    )
+                docs.append(
+                    {
+                        "id": f"rel-{left}-{right}",
+                        "chapter": chapters_list[0],
+                        "title": f"{left} / {right}",
+                        "target": "relationship_graph",
+                        "text": text[:420],
+                        "source": f"{left}-{right}关系",
+                    }
+                )
+            return docs
+
+        else:
+            pair_counter: Counter[tuple[str, str]] = Counter()
+            pair_chapters: dict[tuple[str, str], list[int]] = defaultdict(list)
+            for chapter in chapters:
+                names = sorted(set(name for name in self._extract_person_names(chapter["text"]) if name in known_names))
+                for index, left in enumerate(names):
+                    for right in names[index + 1 :]:
+                        pair = (left, right)
+                        pair_counter[pair] += 1
+                        pair_chapters[pair].append(chapter["chapter"])
+            docs: list[dict[str, Any]] = []
+            for (left, right), count in pair_counter.most_common(180):
+                chapters_list = sorted(set(pair_chapters[(left, right)]))
+                docs.append(
+                    {
+                        "id": f"rel-{left}-{right}",
+                        "chapter": chapters_list[0],
+                        "title": f"{left} / {right}",
+                        "target": "relationship_graph",
+                        "text": (
+                            f"关系对：{left} 与 {right} 在章节 {chapters_list[:10]} 共同出现 {count} 次，"
+                            f"说明两者存在剧情关联。"
+                        ),
+                        "source": f"{left}-{right}关系",
+                    }
+                )
+            return docs
 
     def _build_world_rules(self, chapters: list[dict[str, Any]]) -> list[dict[str, Any]]:
         docs: list[dict[str, Any]] = []
@@ -960,12 +1255,13 @@ class BookIndexRepository:
 
         return score
 
-    def _filter_names_with_llm(self, names: list[str], batch_size: int = 50) -> set[str]:
+    def _filter_names_with_llm(self, names: list[str], batch_size: int = 50, token_callback: Optional[Any] = None) -> set[str]:
         """Use MiniMax LLM to filter candidate names, keeping only real person names.
 
         Args:
             names: Candidate names to filter.
             batch_size: Number of names per LLM request.
+            token_callback: Optional callback for tracking token usage.
 
         Returns:
             Set of names classified as person names. Returns all input names
@@ -987,11 +1283,17 @@ class BookIndexRepository:
                 "哪些是噪声词（如时间词、动词、普通名词、形容词等非人名词语）。\n\n"
                 f"候选名称：{name_list}\n\n"
                 "请只输出真实的人名，用顿号（、）分隔，不要输出任何其他内容。如果全部都不是人名，请输出'无'。\n\n"
+                "**重要规则**：名称末尾带有动作动词（如撞、退、杀、打、飞、跃、走、跑、笑、怒、死、伤、闪、躲等）的不是人名，"
+                "而是人名与动词的拼接错误。这类词必须排除。\n\n"
                 "示例：\n"
                 "输入：韩立、时间、南宫婉、成功、银月、方法\n"
                 "输出：韩立、南宫婉、银月\n\n"
                 "输入：章完、许多、准备、陈巧倩\n"
-                "输出：陈巧倩"
+                "输出：陈巧倩\n\n"
+                "输入：韩立撞、李四退、王五杀、赵六打\n"
+                "输出：无\n\n"
+                "输入：张三、韩立飞、银月、南宫婉笑\n"
+                "输出：张三、银月"
             )
             try:
                 response = client.chat(
@@ -999,6 +1301,9 @@ class BookIndexRepository:
                     temperature=0.1,
                     max_tokens=300,
                 )
+                # Track token usage if callback provided
+                if token_callback and hasattr(response, 'usage') and response.usage:
+                    token_callback(response.usage)
                 result = response.content.strip()
                 if result and result != "无":
                     for name in result.replace("，", "、").split("、"):

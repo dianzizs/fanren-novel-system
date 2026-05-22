@@ -121,11 +121,17 @@ class IndexingServiceMixin:
             source_path = Path(manifest["source_path"])
             title = manifest["title"]
 
+            # Create token callback for tracking LLM usage
+            def token_callback(usage):
+                self._record_token_usage(book_id, usage)
+
             self.set_book_indexing(book_id, "indexing", 0.05)
             raw_text = source_path.read_text(encoding="utf-8")
 
             self.set_book_indexing(book_id, "indexing", 0.10)
             chapters = self.repo._parse_chapters(raw_text)
+
+            self.repo.prewarm_llm_extractions(chapters, book_id, token_callback)
 
             self.set_book_indexing(book_id, "indexing", 0.20)
             chunks = self.repo._build_chunks(chapters)
@@ -137,10 +143,10 @@ class IndexingServiceMixin:
             events = self.repo._build_event_timeline(chapters, chapter_summaries)
 
             self.set_book_indexing(book_id, "indexing", 0.50)
-            character_cards = self.repo._build_character_cards(chapters, book_id)
+            character_cards = self.repo._build_character_cards(chapters, book_id, token_callback)
 
             self.set_book_indexing(book_id, "indexing", 0.55)
-            character_registry = self.repo._build_character_registry(chapters, character_cards, book_id)
+            character_registry = self.repo._build_character_registry(chapters, character_cards, book_id, token_callback)
 
             self.set_book_indexing(book_id, "indexing", 0.60)
             relationships = self.repo._build_relationships(chapters, character_cards)
