@@ -88,7 +88,7 @@ novelqa-system/
 │   ├── __init__.py
 │   ├── api.py            # FastAPI 应用和路由
 │   ├── config.py         # 配置管理
-│   ├── indexing.py       # 索引构建和加载
+│   ├── indexing.py       # 索引与中间产物构建
 │   ├── llm.py            # LLM 客户端封装
 │   ├── models.py         # 数据模型定义
 │   ├── planner.py        # 查询规划和重写
@@ -97,7 +97,9 @@ novelqa-system/
 │   ├── tracing.py        # 追踪日志基础设施
 │   ├── validator.py      # 验证层（证据门控、答案验证、剧透防护）
 │   ├── semantic_scorer.py # 语义相关性评分
-│   └── novel_heuristics.py  # 小说特定规则（可选）
+│   ├── novel_heuristics.py  # 小说特定规则（可选）
+│   └── utils/
+│       └── text_utils.py # 共享文本处理工具
 ├── scripts/              # 脚本工具
 │   ├── build_index.py    # 索引构建脚本
 │   ├── run_api.py        # API 启动脚本
@@ -253,6 +255,14 @@ RetrievalTarget = Literal[
 - **数据存储**: 本地文件系统
 
 ## 更新日志
+
+### 2026-05-22 - 项目结构优化与重构
+
+**优化调整：**
+- **代码精简与重构**:
+  - 将 `novel_system/artifacts/` 目录下的所有构建逻辑（`SceneSegmentBuilder`, `CharacterRegistryBuilder` 等）与 `novel_system/index_pipeline.py` 整合至 `novel_system/indexing.py`。
+  - 提取公共的文本处理逻辑（如句子切分、事件语句评分、预编译正则表达式等）至 `novel_system/utils/text_utils.py`，实现模块解耦。
+  - 清理多余的临时文件，统一测试与运行入口。
 
 ### 2026-04-14 - 场景感知检索重构
 

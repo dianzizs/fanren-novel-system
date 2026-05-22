@@ -1,5 +1,5 @@
 """Tests for character registry building."""
-from novel_system.artifacts.character_registry import CharacterRegistryBuilder, FilterThresholds
+from novel_system.indexing import CharacterRegistryBuilder, FilterThresholds
 
 
 def test_registry_merges_alias_into_canonical_name():

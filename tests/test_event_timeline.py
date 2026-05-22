@@ -129,7 +129,7 @@ def test_score_event_sentence_causality():
 
 def test_build_event_timeline_prioritizes_event_sentences():
     """Event timeline should prioritize event-like sentences over first sentences."""
-    from novel_system.index_pipeline import build_book_artifacts
+    from novel_system.indexing import build_book_artifacts
 
     # Chapter with descriptive opening followed by key events
     chapters = [
@@ -161,7 +161,7 @@ def test_build_event_timeline_prioritizes_event_sentences():
 
 def test_build_event_timeline_multiple_chapters():
     """Event timeline should work across multiple chapters."""
-    from novel_system.index_pipeline import build_book_artifacts
+    from novel_system.indexing import build_book_artifacts
 
     chapters = [
         {
@@ -188,7 +188,7 @@ def test_build_event_timeline_multiple_chapters():
 
 def test_event_timeline_has_required_fields():
     """Event timeline entries should have all required fields."""
-    from novel_system.index_pipeline import build_book_artifacts
+    from novel_system.indexing import build_book_artifacts
 
     chapters = [
         {

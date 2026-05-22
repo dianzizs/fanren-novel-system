@@ -1,7 +1,7 @@
 """Tests for scene segmentation."""
 import json
 
-from novel_system.artifacts.scene_segments import SceneSegmentBuilder
+from novel_system.indexing import SceneSegmentBuilder
 
 
 def test_scene_builder_splits_on_location_shift():

@@ -48,7 +48,7 @@ def test_repository_reads_new_artifact_names(tmp_path: Path):
 
 def test_pipeline_builds_scene_and_registry():
     """Pipeline 应构建场景片段和角色注册表。"""
-    from novel_system.index_pipeline import build_book_artifacts
+    from novel_system.indexing import build_book_artifacts
 
     chapters = [
         {
@@ -76,7 +76,7 @@ def test_pipeline_builds_scene_and_registry():
 
 def test_pipeline_produces_complete_artifact_set():
     """Pipeline 应生成完整的 artifact 集合。"""
-    from novel_system.index_pipeline import build_book_artifacts
+    from novel_system.indexing import build_book_artifacts
 
     chapters = [
         {
@@ -103,7 +103,7 @@ def test_pipeline_produces_complete_artifact_set():
 
 def test_character_registry_filters_by_frequency():
     """Character registry should filter low-frequency noise."""
-    from novel_system.index_pipeline import build_book_artifacts
+    from novel_system.indexing import build_book_artifacts
 
     # Create chapters with a high-frequency character and low-frequency noise
     # Use proper punctuation after names so the regex extracts names correctly
@@ -132,7 +132,7 @@ def test_character_registry_filters_by_frequency():
 
 def test_character_registry_includes_canonical_names():
     """Character registry entries should have canonical names."""
-    from novel_system.index_pipeline import build_book_artifacts
+    from novel_system.indexing import build_book_artifacts
 
     chapters = [
         {
@@ -162,7 +162,7 @@ def test_character_registry_includes_canonical_names():
 
 def test_character_registry_is_reproducible():
     """Character registry should produce stable results for same input."""
-    from novel_system.index_pipeline import build_book_artifacts
+    from novel_system.indexing import build_book_artifacts
 
     chapters = [
         {

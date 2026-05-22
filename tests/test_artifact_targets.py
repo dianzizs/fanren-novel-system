@@ -1,5 +1,5 @@
 """Tests for artifact target builders."""
-from novel_system.artifacts.targets import build_chapter_chunks, build_character_cards, build_event_timeline
+from novel_system.indexing import build_chapter_chunks, build_character_cards, build_event_timeline
 
 
 def test_chapter_chunks_inherit_scene_metadata():

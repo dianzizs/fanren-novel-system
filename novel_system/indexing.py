@@ -29,9 +29,11 @@ from typing import Any, TYPE_CHECKING, Optional
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 import jieba
+import jieba.posseg as pseg
 
 from .config import AppConfig
 from .vector_store import FAISSVectorStore
+from .utils.text_utils import split_sentences, score_event_sentence
 
 if TYPE_CHECKING:
     from .embedding.base import EmbeddingProvider
@@ -102,33 +104,6 @@ BAD_NAME_ENDINGS = set(
     "觉知该当从只已又如为何但却虽再向能需可应最都"
     "撞退杀打飞跃跑笑怒死伤闪躲"
 )
-
-# Event sentence recognition patterns
-TIME_WORDS = frozenset({
-    "后来", "之后", "之前", "当时", "几天后", "数日后", "半月后", "一月后",
-    "这时候", "此时", "那时", "第二天", "次日", "当夜", "这天", "当日",
-    "过了许久", "没多久", "不久", "终于", "然后", "接着", "随后",
-})
-
-ACTION_VERBS = frozenset({
-    "发现", "决定", "选择", "杀死", "击杀", "获得", "得到", "遇到", "遇见",
-    "逃离", "逃脱", "到达", "抵达", "攻击", "出手", "突破", "修炼", "炼制",
-    "夺舍", "吞噬", "夺走", "抢走", "偷走", "救下", "救出", "抓住", "擒住",
-    "释放", "解除", "开启", "关闭", "激活", "触发", "识破", "看穿",
-    "答应", "拒绝", "同意", "提出", "宣布", "命令", "安排", "派遣",
-    "背叛", "反叛", "投降", "归顺", "结盟", "合作", "交易", "交换",
-})
-
-CAUSALITY_WORDS = frozenset({
-    "因为", "所以", "为了", "由于", "导致", "结果", "使得", "于是",
-    "因此", "因而", "故而", "以至于", "从而", "原来", "只因",
-})
-
-CHANGE_INDICATORS = frozenset({
-    "突然", "忽然", "猛然", "骤然", "竟", "竟然", "居然", "终于",
-    "立刻", "马上", "瞬间", "顿时", "霎时", "顷刻", "一时间",
-    "意外", "没想到", "出乎意料", "想不到",
-})
 
 RULE_PATTERNS = (
     "外门",
@@ -1211,49 +1186,10 @@ class BookIndexRepository:
         return line
 
     def _split_sentences(self, text: str) -> list[str]:
-        return [match.group(0).strip() for match in SENTENCE_RE.finditer(text) if match.group(0).strip()]
+        return split_sentences(text)
 
     def _score_event_sentence(self, sentence: str) -> float:
-        """Score a sentence for event significance.
-
-        Higher scores indicate more event-like sentences.
-        Factors: time words, action verbs, causality words, change indicators.
-        """
-        score = 0.0
-
-        # Time words indicate temporal progression (key for events)
-        for word in TIME_WORDS:
-            if word in sentence:
-                score += 2.0
-                break  # Only count once per category
-
-        # Action verbs are the core of events
-        for word in ACTION_VERBS:
-            if word in sentence:
-                score += 3.0
-                break
-
-        # Causality words indicate cause-effect relationships
-        for word in CAUSALITY_WORDS:
-            if word in sentence:
-                score += 1.5
-                break
-
-        # Change indicators show sudden/important changes
-        for word in CHANGE_INDICATORS:
-            if word in sentence:
-                score += 1.5
-                break
-
-        # Contains person name - events involve characters
-        if PERSON_RE.search(sentence):
-            score += 1.0
-
-        # Length bonus - very short sentences are usually not events
-        if len(sentence) >= 20:
-            score += 0.5
-
-        return score
+        return score_event_sentence(sentence)
 
     def _filter_names_with_llm(self, names: list[str], batch_size: int = 50, token_callback: Optional[Any] = None) -> set[str]:
         """Use MiniMax LLM to filter candidate names, keeping only real person names.
@@ -1348,3 +1284,508 @@ def scope_filter(chapter: int, chapter_scope: list[int]) -> bool:
         return chapter == chapter_scope[0]
     start, end = min(chapter_scope), max(chapter_scope)
     return start <= chapter <= end
+
+
+LOCATION_SHIFT_RE = re.compile(r"(来到|走到|出了|进了|回到|在.+?广场|在.+?屋内)")
+
+
+@dataclass
+class FilterThresholds:
+    """Thresholds for evidence-based candidate filtering.
+
+    Characters below these thresholds are filtered out, unless they are
+    seed characters (known canonical names from seed_aliases).
+    """
+    min_frequency: int = 2
+    min_chapter_span: int = 1
+    min_scene_count: int = 1
+
+
+class CharacterRegistryBuilder:
+    """Builds character registry from scene segments.
+
+    The registry resolves aliases to canonical names, tracks
+    character appearances across chapters, and filters candidates
+    based on evidence (frequency, chapter span, scene count).
+    """
+
+    def __init__(
+        self,
+        seed_aliases: dict[str, list[str]] | None = None,
+        thresholds: FilterThresholds | None = None,
+    ) -> None:
+        """Initialize with optional seed alias map and filter thresholds.
+
+        Args:
+            seed_aliases: Map of canonical names to their known aliases.
+                         e.g., {"韩立": ["二愣子"], "墨大夫": ["墨老"]}
+            thresholds: Evidence thresholds for filtering candidates.
+        """
+        self.seed_aliases = seed_aliases or {}
+        self.thresholds = thresholds or FilterThresholds()
+        self.alias_to_canonical = {
+            alias: canonical
+            for canonical, aliases in self.seed_aliases.items()
+            for alias in aliases
+        }
+        # Seed characters are always kept regardless of evidence
+        self.seed_canonical_names = set(self.seed_aliases.keys())
+
+    def build(self, scenes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Build character registry from scene segments.
+
+        Applies evidence-based filtering:
+        - Frequency evidence: minimum number of mentions
+        - Chapter span evidence: minimum number of unique chapters
+        - Scene evidence: minimum number of unique scenes
+
+        Seed characters (from seed_aliases keys) are always kept.
+
+        Args:
+            scenes: List of scene segment dicts with character mentions.
+
+        Returns:
+            List of character registry entries sorted by first appearance.
+        """
+        # Track raw evidence for each candidate
+        raw_buckets: dict[str, dict[str, Any]] = {}
+        mention_counts: dict[str, int] = {}
+
+        for scene in scenes:
+            seen_in_scene: set[str] = set()
+            mentions_in_scene = scene.get("raw_character_mentions", [])
+            for mention in mentions_in_scene:
+                canonical = self.alias_to_canonical.get(mention, mention)
+                mention_counts[canonical] = mention_counts.get(canonical, 0) + 1
+                entry = raw_buckets.setdefault(
+                    canonical,
+                    {
+                        "character_id": f"char-{canonical}",
+                        "canonical_name": canonical,
+                        "aliases": [],
+                        "titles": [],
+                        "name_variants": [canonical],
+                        "first_seen_chapter": scene["chapter"],
+                        "last_seen_chapter": scene["chapter"],
+                        "chapters": {scene["chapter"]},
+                        "evidence_scene_ids": [],
+                        "co_occurring_characters": [],
+                    },
+                )
+                if mention != canonical and mention not in entry["aliases"]:
+                    entry["aliases"].append(mention)
+                    entry["name_variants"].append(mention)
+                entry["first_seen_chapter"] = min(entry["first_seen_chapter"], scene["chapter"])
+                entry["last_seen_chapter"] = max(entry["last_seen_chapter"], scene["chapter"])
+                entry["chapters"].add(scene["chapter"])
+                if scene["id"] not in entry["evidence_scene_ids"]:
+                    entry["evidence_scene_ids"].append(scene["id"])
+                seen_in_scene.add(canonical)
+            # Track co-occurring characters
+            for canonical in seen_in_scene:
+                others = sorted(name for name in seen_in_scene if name != canonical)
+                for other in others:
+                    if other not in raw_buckets[canonical]["co_occurring_characters"]:
+                        raw_buckets[canonical]["co_occurring_characters"].append(other)
+
+        # Filter candidates based on evidence thresholds
+        filtered_entries: list[dict[str, Any]] = []
+        for canonical, entry in raw_buckets.items():
+            frequency = mention_counts.get(canonical, 0)
+            chapter_span = len(entry["chapters"])
+            scene_count = len(entry["evidence_scene_ids"])
+
+            # Compute confidence based on evidence
+            confidence = self._compute_confidence(frequency, chapter_span, scene_count)
+
+            # Check if character passes evidence thresholds
+            is_seed = canonical in self.seed_canonical_names
+            passes_filter = (
+                is_seed
+                or (
+                    frequency >= self.thresholds.min_frequency
+                    and chapter_span >= self.thresholds.min_chapter_span
+                    and scene_count >= self.thresholds.min_scene_count
+                )
+            )
+
+            if passes_filter:
+                filtered_entries.append({
+                    "character_id": entry["character_id"],
+                    "canonical_name": entry["canonical_name"],
+                    "aliases": list(entry["aliases"]),
+                    "titles": list(entry["titles"]),
+                    "name_variants": list(entry["name_variants"]),
+                    "first_seen_chapter": entry["first_seen_chapter"],
+                    "last_seen_chapter": entry["last_seen_chapter"],
+                    "active_range": [entry["first_seen_chapter"], entry["last_seen_chapter"]],
+                    "evidence_scene_ids": list(entry["evidence_scene_ids"]),
+                    "co_occurring_characters": list(entry["co_occurring_characters"]),
+                    # Primary evidence fields (for backward compatibility)
+                    "frequency": frequency,
+                    "chapter_span": chapter_span,
+                    "scene_count": scene_count,
+                    # Additional detail fields
+                    "frequency_evidence": frequency,
+                    "chapter_span_evidence": chapter_span,
+                    "scene_evidence": scene_count,
+                    "confidence": round(confidence, 3),
+                })
+
+        # Sort deterministically: by first appearance, then by name for stability
+        return sorted(filtered_entries, key=lambda item: (item["first_seen_chapter"], item["canonical_name"]))
+
+    def _compute_confidence(self, frequency: int, chapter_span: int, scene_count: int) -> float:
+        """Compute confidence score based on evidence.
+
+        Higher evidence → higher confidence.
+        Base confidence is 0.5, boosted by evidence.
+        """
+        base = 0.5
+        frequency_boost = min(frequency * 0.05, 0.2)
+        chapter_boost = min(chapter_span * 0.1, 0.15)
+        scene_boost = min(scene_count * 0.05, 0.15)
+        return min(base + frequency_boost + chapter_boost + scene_boost, 1.0)
+
+
+class SceneSegmentBuilder:
+    """Builds scene segments from parsed chapters.
+
+    Scenes are split on location shifts and carry character mentions.
+    Each scene gets a stable ID for cross-referencing.
+    """
+
+    def build(self, chapters: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Build scene segments from chapters.
+
+        Args:
+            chapters: List of chapter dicts with 'chapter', 'title', 'paragraphs' keys.
+
+        Returns:
+            List of scene segment dicts with metadata.
+        """
+        scenes: list[dict[str, Any]] = []
+        for chapter in chapters:
+            current: list[str] = []
+            start_index = 0
+            scene_index = 0
+            for paragraph_index, paragraph in enumerate(chapter.get("paragraphs", [])):
+                if current and self._is_boundary(current[-1], paragraph):
+                    scenes.append(
+                        self._make_scene(chapter, scene_index, start_index, paragraph_index - 1, current)
+                    )
+                    scene_index += 1
+                    current = []
+                    start_index = paragraph_index
+                current.append(paragraph)
+            if current:
+                scenes.append(
+                    self._make_scene(chapter, scene_index, start_index, start_index + len(current) - 1, current)
+                )
+        return scenes
+
+    def _is_boundary(self, previous: str, current: str) -> bool:
+        """Detect if there's a scene boundary between paragraphs."""
+        return bool(LOCATION_SHIFT_RE.search(current) and previous != current)
+
+    def _make_scene(
+        self,
+        chapter: dict[str, Any],
+        scene_index: int,
+        start_index: int,
+        end_index: int,
+        paragraphs: list[str],
+    ) -> dict[str, Any]:
+        """Create a scene segment dict."""
+        text = "\n".join(paragraphs)
+        mentions = self._extract_person_names(text)
+        ranked_mentions = [name for name, _ in Counter(mentions).most_common(6)]
+        return {
+            "id": f"ch{chapter['chapter']}-scene{scene_index}",
+            "chapter": chapter["chapter"],
+            "scene_index": scene_index,
+            "title": chapter["title"],
+            "text": text,
+            "paragraph_start": start_index,
+            "paragraph_end": end_index,
+            "char_start": 0,
+            "char_end": len(text),
+            "scene_summary": text[:120],
+            "major_characters": ranked_mentions[:3],
+            "raw_character_mentions": ranked_mentions,
+            "event_ids": [],
+            "spoiler_level": "current",
+            "prev_scene_id": None if scene_index == 0 else f"ch{chapter['chapter']}-scene{scene_index - 1}",
+            "next_scene_id": None,
+        }
+
+    def _extract_person_names(self, text: str) -> list[str]:
+        """Extract person names using POS tagging and surname patterns.
+
+        Combines two strategies:
+        1. jieba POS tagging (nr = person name) for segmentation-based detection
+        2. Regex patterns (PERSON_RE, TITLE_PERSON_RE) for surname-based fallback
+
+        Results are merged, deduplicated, and filtered.
+        """
+        names: list[str] = []
+
+        # Strategy 1: jieba POS tagging — identify words tagged as person names (nr)
+        for word in pseg.cut(text):
+            if word.flag == "nr" and len(word.word) >= 2:
+                candidate = word.word.strip()
+                if (
+                    candidate not in STOP_NAMES
+                    and candidate[-1] not in BAD_NAME_ENDINGS
+                    and not candidate.endswith(("门", "帮", "山", "谷", "功", "法"))
+                ):
+                    names.append(candidate)
+
+        # Strategy 2: regex patterns (surname + title based)
+        for regex in (PERSON_RE, TITLE_PERSON_RE):
+            for item in regex.findall(text):
+                candidate = item.strip()
+                if (
+                    len(candidate) < 2
+                    or candidate in STOP_NAMES
+                    or candidate[-1] in BAD_NAME_ENDINGS
+                ):
+                    continue
+                if candidate.endswith("门") or candidate.endswith("帮") or candidate.endswith("山") or candidate.endswith("谷"):
+                    continue
+                names.append(candidate)
+
+        frequency = Counter(names)
+        return [name for name, _ in frequency.most_common() if name not in STOP_NAMES]
+
+
+def build_chapter_chunks(
+    scenes: list[dict[str, Any]],
+    *,
+    chunk_size: int = 420,
+    overlap: int = 80,
+) -> list[dict[str, Any]]:
+    """Build chapter chunks from scene segments.
+
+    Each chunk inherits scene metadata (major_characters, event_ids, spoiler_level).
+
+    Args:
+        scenes: List of scene segment dicts.
+        chunk_size: Maximum characters per chunk.
+        overlap: Character overlap between consecutive chunks.
+
+    Returns:
+        List of chunk dicts with scene metadata.
+    """
+    chunks: list[dict[str, Any]] = []
+    for scene in scenes:
+        text = scene["text"]
+        start = 0
+        chunk_index = 0
+        while start < len(text):
+            end = min(len(text), start + chunk_size)
+            snippet = text[start:end].strip()
+            if snippet:
+                chunks.append(
+                    {
+                        "id": f"{scene['id']}-chunk{chunk_index}",
+                        "chapter": scene["chapter"],
+                        "title": scene["title"],
+                        "target": "chapter_chunks",
+                        "text": snippet,
+                        "source": f"第{scene['chapter']}章 {scene['title']}",
+                        "scene_id": scene["id"],
+                        "scene_index": scene["scene_index"],
+                        "chunk_index_in_scene": chunk_index,
+                        "chunk_count_in_scene": None,
+                        "major_characters": list(scene.get("major_characters", [])),
+                        "event_ids": list(scene.get("event_ids", [])),
+                        "spoiler_level": scene.get("spoiler_level", "current"),
+                        "paragraph_start": scene["paragraph_start"],
+                        "paragraph_end": scene["paragraph_end"],
+                        "char_start": scene["char_start"] + start,
+                        "char_end": scene["char_start"] + end,
+                    }
+                )
+                chunk_index += 1
+            if end >= len(text):
+                break
+            start = max(0, end - overlap)
+        # Update chunk_count_in_scene for all chunks of this scene
+        total = chunk_index
+        for item in chunks[-total:]:
+            item["chunk_count_in_scene"] = total
+    return chunks
+
+
+def _extract_event_sentences(text: str, max_sentences: int = 5, max_total_len: int = 120) -> str:
+    """Extract event-like sentences from text.
+
+    Scores sentences and returns top ones concatenated.
+    Falls back to first part of text if no good sentences found.
+    """
+    sentences = split_sentences(text)
+    scored = []
+    for sentence in sentences:
+        compact = sentence.strip()
+        if len(compact) < 12:
+            continue
+        score = score_event_sentence(compact)
+        scored.append((score, compact))
+
+    # Select top sentences by score
+    scored.sort(key=lambda x: x[0], reverse=True)
+    picked = []
+    total_len = 0
+
+    for score, sentence in scored:
+        if len(picked) >= max_sentences:
+            break
+        if total_len + len(sentence) + 1 > max_total_len:
+            break
+        picked.append(sentence)
+        total_len += len(sentence) + 1
+
+    return " ".join(picked) or text[:max_total_len]
+
+
+def build_event_timeline(
+    scenes: list[dict[str, Any]],
+    *,
+    max_events_per_scene: int = 1,
+) -> list[dict[str, Any]]:
+    """Build event timeline from scene segments.
+
+    Each scene generates one event entry with participants from major_characters.
+
+    Args:
+        scenes: List of scene segment dicts.
+        max_events_per_scene: Maximum events per scene (currently 1).
+
+    Returns:
+        List of event dicts linked to scenes.
+    """
+    events: list[dict[str, Any]] = []
+    for scene in scenes:
+        event_id = f"event-{scene['id']}-0"
+        # Extract event sentences instead of just first 120 chars
+        event_text = _extract_event_sentences(scene["text"])
+        event = {
+            "event_id": event_id,
+            "id": event_id,
+            "chapter": scene["chapter"],
+            "scene_id": scene["id"],
+            "title": f"第{scene['chapter']}章事件",
+            "target": "event_timeline",
+            "summary": event_text,
+            "text": event_text,
+            "description": event_text,  # Add description field for consistency
+            "participants": list(scene.get("major_characters", [])),
+            "location": scene["title"],
+            "event_type": "scene_summary",
+            "preceding_event_ids": [events[-1]["event_id"]] if events else [],
+            "following_event_ids": [],
+            "spoiler_level": scene.get("spoiler_level", "current"),
+            "source": f"第{scene['chapter']}章 {scene['title']}",
+        }
+        if events:
+            events[-1]["following_event_ids"] = [event_id]
+        events.append(event)
+    return events
+
+
+def build_character_cards(
+    registry: list[dict[str, Any]],
+    scenes: list[dict[str, Any]],
+    events: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Build character cards from registry, scenes, and events.
+
+    Cards combine registry metadata with scene evidence and event participation.
+
+    Args:
+        registry: List of character registry entries.
+        scenes: List of scene segment dicts.
+        events: List of event dicts.
+
+    Returns:
+        List of character card dicts.
+    """
+    scene_map = {scene["id"]: scene for scene in scenes}
+    cards: list[dict[str, Any]] = []
+    for entry in registry:
+        # Find events where this character participates
+        related_events = [
+            event["event_id"]
+            for event in events
+            if entry["canonical_name"] in event.get("participants", [])
+        ]
+        # Get evidence snippets from scenes
+        snippets = [
+            scene_map[scene_id]["text"][:120]
+            for scene_id in entry.get("evidence_scene_ids", [])
+            if scene_id in scene_map
+        ]
+        cards.append(
+            {
+                "id": f"character-{entry['canonical_name']}",
+                "character_id": entry["character_id"],
+                "canonical_name": entry["canonical_name"],
+                "aliases": list(entry.get("aliases", [])),
+                "titles": list(entry.get("titles", [])),
+                "chapter": entry["active_range"][0],
+                "chapter_span": list(entry["active_range"]),
+                "active_range": list(entry["active_range"]),
+                "target": "character_card",
+                "summary": snippets[0] if snippets else entry["canonical_name"],
+                "retrieval_text": " ".join([entry["canonical_name"], *entry.get("aliases", []), *snippets[:2]]).strip(),
+                "key_scene_ids": list(entry.get("evidence_scene_ids", [])),
+                "related_event_ids": related_events,
+                "source": f"{entry['canonical_name']}人物卡",
+            }
+        )
+    return cards
+
+
+def build_book_artifacts(
+    chapters: list[dict[str, Any]],
+    seed_aliases: dict[str, list[str]] | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    """Build all artifacts from parsed chapters.
+
+    This is the main entry point for indexing. It orchestrates:
+    1. Scene segmentation
+    2. Character registry building
+    3. Target artifact building (chunks, events, cards)
+
+    Args:
+        chapters: List of chapter dicts with 'chapter', 'title', 'text', 'paragraphs' keys.
+        seed_aliases: Optional {canonical: [alias, ...]} mapping for known characters.
+
+    Returns:
+        Dict mapping artifact names to lists of artifact dicts.
+    """
+    # Step 1: Build scene segments
+    scenes = SceneSegmentBuilder().build(chapters)
+
+    # Step 2: Build character registry
+    registry = CharacterRegistryBuilder(seed_aliases=seed_aliases or {}).build(scenes)
+
+    # Step 3: Build target artifacts
+    events = build_event_timeline(scenes)
+    cards = build_character_cards(registry, scenes, events)
+
+    return {
+        "scene_segments": scenes,
+        "character_registry": registry,
+        "chapter_chunks": build_chapter_chunks(scenes),
+        "chapter_summaries": [],
+        "event_timeline": events,
+        "character_card": cards,
+        "relationship_graph": [],
+        "world_rule": [],
+        "canon_memory": [],
+        "recent_plot": [],
+        "style_samples": [],
+        "vision_parse": [],
+    }
