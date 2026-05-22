@@ -1,9 +1,11 @@
 """LLM 客户端模块。
 
-封装 MiniMax API 调用，提供统一的对话接口。
+封装 MiniMax / Mimo API 调用，提供统一的对话接口。
 
 关键导出：
-- MiniMaxClient: MiniMax API 客户端
+- MiniMaxClient: 备用 LLM 路由器（MiniMax 优先，失败降级到 Mimo）
+- MiniMaxDirectClient: 直接调用 MiniMax API 的底层客户端
+- MimoClient: Anthropic-compatible Mimo API 客户端
 - LLMResponse: 包含内容和 token 使用量的响应对象
 """
 
@@ -32,10 +34,11 @@ class LLMResponse:
         self.usage = usage or {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
 
-class MiniMaxClient:
-    """MiniMax API 客户端。
+class MiniMaxDirectClient:
+    """MiniMax API 底层客户端。
 
     支持带重试的对话调用，自动处理 think 标签清理。
+    对外请使用 MiniMaxClient（路由器），而非直接实例化此类。
     """
 
     # 重试配置
@@ -247,3 +250,62 @@ class MimoClient:
                     continue
                 logger.error(f"Mimo API call failed permanently after {self.MAX_RETRIES} retries.")
                 raise
+
+
+class MiniMaxClient:
+    """备用 LLM 路由器。
+
+    优先尝试 MiniMax；若 MiniMax 未配置或请求失败，自动降级到 Mimo。
+
+    对外接口与历史 MiniMaxClient 完全兼容。
+    """
+
+    def __init__(self, config: AppConfig) -> None:
+        self._minimax = MiniMaxDirectClient(config)
+        self._mimo = MimoClient(config)
+
+    @property
+    def enabled(self) -> bool:
+        return self._minimax.enabled or self._mimo.enabled
+
+    def chat(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        temperature: float = 0.2,
+        max_tokens: int = 900,
+    ) -> LLMResponse:
+        """路由对话请求到已配置的 LLM。
+
+        顺序：先 MiniMax，失败则降级到 Mimo。
+        若 MiniMax 未配置，直接路由到 Mimo。
+
+        Raises:
+            RuntimeError: 两个备用均未配置时抛出
+        """
+        if not self.enabled:
+            raise RuntimeError(
+                "Neither MINIMAX_API_KEY nor MIMO_API_KEY / ANTHROPIC_AUTH_TOKEN is configured."
+            )
+
+        if self._minimax.enabled:
+            try:
+                logger.info("Attempting MiniMax chat request...")
+                return self._minimax.chat(
+                    messages, temperature=temperature, max_tokens=max_tokens
+                )
+            except Exception as exc:  # noqa: BLE001
+                if self._mimo.enabled:
+                    logger.warning(
+                        "MiniMax request failed (%s). Falling back to Mimo...", exc
+                    )
+                    return self._mimo.chat(
+                        messages, temperature=temperature, max_tokens=max_tokens
+                    )
+                logger.error("MiniMax failed and Mimo is not configured.")
+                raise
+
+        logger.info("MiniMax not configured. Routing directly to Mimo...")
+        return self._mimo.chat(
+            messages, temperature=temperature, max_tokens=max_tokens
+        )
