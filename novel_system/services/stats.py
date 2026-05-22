@@ -56,13 +56,24 @@ class StatsServiceMixin:
         return stats
 
     def _record_token_usage(self, book_id: str, usage: dict[str, int]) -> None:
-        """记录 LLM token 使用量 (线程安全)"""
+        """记录 LLM token 使用量并持久化到磁盘 (线程安全)"""
         if not usage:
             return
         with self._lock:
             self.token_usage[book_id]["prompt_tokens"] += usage.get("prompt_tokens", 0)
             self.token_usage[book_id]["completion_tokens"] += usage.get("completion_tokens", 0)
             self.token_usage[book_id]["total_tokens"] += usage.get("total_tokens", 0)
+
+            # Save to disk
+            book_dir = self.config.data_dir / "books" / book_id
+            book_dir.mkdir(parents=True, exist_ok=True)
+            token_file = book_dir / "token_usage.json"
+            try:
+                with open(token_file, "w", encoding="utf-8") as f:
+                    json.dump(self.token_usage[book_id], f, ensure_ascii=False, indent=2)
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(f"Failed to save token usage to {token_file}: {e}")
 
     def get_token_stats(self) -> dict[str, Any]:
         """获取 token 统计信息"""

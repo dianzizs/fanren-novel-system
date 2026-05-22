@@ -33,6 +33,7 @@ class NovelSystemBase:
         self.token_usage: dict[str, dict[str, int]] = defaultdict(
             lambda: {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         )
+        self._load_token_usage_from_disk()
         self._novel_configs: dict[str, NovelConfig] = {}  # 缓存小说配置
         # 验证层组件
         self.semantic_scorer = SemanticScorer(embedding_provider=self.embedding_provider)
@@ -82,3 +83,23 @@ class NovelSystemBase:
             return []
         import json
         return json.loads(path.read_text(encoding="utf-8"))
+
+    def _load_token_usage_from_disk(self) -> None:
+        import json
+        import logging
+        books_dir = self.config.data_dir / "books"
+        if books_dir.exists():
+            for book_dir in books_dir.iterdir():
+                if book_dir.is_dir():
+                    token_file = book_dir / "token_usage.json"
+                    if token_file.exists():
+                        try:
+                            with open(token_file, "r", encoding="utf-8") as f:
+                                usage = json.load(f)
+                            self.token_usage[book_dir.name] = {
+                                "prompt_tokens": usage.get("prompt_tokens", 0),
+                                "completion_tokens": usage.get("completion_tokens", 0),
+                                "total_tokens": usage.get("total_tokens", 0),
+                            }
+                        except Exception as e:
+                            logging.getLogger(__name__).warning(f"Failed to load token usage from {token_file}: {e}")
