@@ -71,6 +71,7 @@ class GraphService(NovelSystemService):
         *,
         center: str | None = None,
         limit: int = 18,
+        density: str = "auto",
     ) -> dict[str, Any]:
         self.ensure_indexed(book_id)
         book_index = self.repo.load(book_id)
@@ -108,38 +109,38 @@ class GraphService(NovelSystemService):
         # 1. If book is whitelisted, load graph_profile.json
         # 2. Merge with character_registry artifact if available
         # 3. Fall back to empty profile
-        profile = None
+        graph_profile = None
 
         if is_book_in_whitelist(book_id):
-            profile = load_graph_profile(book_id)
+            graph_profile = load_graph_profile(book_id)
             logger.info(f"Loaded graph_profile.json for whitelisted book {book_id}")
 
         character_registry = book_index.corpora.get("character_registry", [])
         if character_registry:
             registry_profile = build_profile_from_character_registry(character_registry, book_id)
-            if profile is None:
-                profile = registry_profile
+            if graph_profile is None:
+                graph_profile = registry_profile
             else:
                 # Merge: registry supplements explicit config
-                profile.character_seeds.update(registry_profile.character_seeds)
-                profile.aliases.update(registry_profile.aliases)
+                graph_profile.character_seeds.update(registry_profile.character_seeds)
+                graph_profile.aliases.update(registry_profile.aliases)
             logger.debug(f"Character registry contributed {len(registry_profile.character_seeds)} seeds")
         elif not character_registry:
             logger.warning(f"No character_registry artifacts found for book {book_id}")
 
-        if profile is None:
+        if graph_profile is None:
             logger.warning(f"No profile available for book {book_id}, using empty profile")
-            profile = GraphProfile.default(book_id)
+            graph_profile = GraphProfile.default(book_id)
 
-        seed_names = profile.character_seeds
+        seed_names = graph_profile.character_seeds
 
         raw_scores = self._build_graph_name_scores(character_docs, event_docs)
-        known_names = _seed_graph_known_names(raw_scores, profile)
+        known_names = _seed_graph_known_names(raw_scores, graph_profile)
 
         character_buckets: dict[str, list[dict[str, Any]]] = defaultdict(list)
         character_scores: dict[str, float] = defaultdict(float)
         for index, doc in character_docs:
-            canonical = self._canonicalize_graph_name(str(doc.get("name", "")), known_names, profile)
+            canonical = self._canonicalize_graph_name(str(doc.get("name", "")), known_names, graph_profile)
             if not canonical:
                 continue
             character_buckets[canonical].append({"index": index, "doc": doc})
@@ -152,7 +153,7 @@ class GraphService(NovelSystemService):
         for index, doc in event_docs:
             participants = []
             for name in doc.get("participants", []):
-                canonical = self._canonicalize_graph_name(str(name), known_names, profile)
+                canonical = self._canonicalize_graph_name(str(name), known_names, graph_profile)
                 if canonical and canonical not in participants:
                     participants.append(canonical)
                     character_scores[canonical] += 0.8
@@ -172,7 +173,7 @@ class GraphService(NovelSystemService):
                 if len(support["snippets"]) < 3 and event["description"]:
                     support["snippets"].append(event["description"])
 
-        center_name = self._canonicalize_graph_name(center or "", known_names, profile) if center else None
+        center_name = self._canonicalize_graph_name(center or "", known_names, graph_profile) if center else None
         center_affinity_scores: dict[str, float] = defaultdict(float)
         if center_name:
             for event in normalized_events:
@@ -199,24 +200,49 @@ class GraphService(NovelSystemService):
         if center_name and center_name not in available_characters:
             available_characters.insert(0, center_name)
 
-        character_query_scores = self._graph_character_query_scores(book_index, character_docs, known_names, center_name, profile)
+        character_query_scores = self._graph_character_query_scores(book_index, character_docs, known_names, center_name, graph_profile)
         ranked_characters = sorted(
             character_scores.items(),
             key=lambda item: (
+                -self._graph_candidate_tier(
+                    item[0],
+                    seed_names=seed_names,
+                    character_buckets=character_buckets,
+                    event_character_support=event_character_support,
+                ),
                 item[1]
                 + character_query_scores.get(item[0], 0.0) * 6
                 + center_affinity_scores.get(item[0], 0.0) * 3.5
                 + (1.6 if item[0] in seed_names else 0.0)
-                + (5 if item[0] == center_name else 0)
+                + (5 if item[0] == center_name else 0),
             ),
             reverse=True,
         )
-        character_limit = max(8, min(14, limit))
+
+        scope_chapter_count = 0
+        if scope.chapters:
+            scope_chapter_count = max(scope.chapters) - min(scope.chapters) + 1
+
+        graph_budget = self._compute_graph_budget(
+            density=density,
+            requested_limit=limit,
+            candidate_character_count=len(ranked_characters),
+            candidate_event_count=len(normalized_events),
+            scope_chapter_count=scope_chapter_count,
+            has_center=bool(center_name),
+        )
+        character_limit = int(graph_budget["character_limit"])
         selected_characters: list[str] = []
         if center_name:
             selected_characters.append(center_name)
         for name, _ in ranked_characters:
-            if not character_buckets.get(name) and not event_character_support.get(name):
+            tier = self._graph_candidate_tier(
+                name,
+                seed_names=seed_names,
+                character_buckets=character_buckets,
+                event_character_support=event_character_support,
+            )
+            if tier >= 99:
                 continue
             if name not in selected_characters:
                 selected_characters.append(name)
@@ -243,7 +269,7 @@ class GraphService(NovelSystemService):
                 continue
             support = event_character_support.get(name)
             if support:
-                character_profiles[name] = self._build_event_backed_character_doc(name, support, profile)
+                character_profiles[name] = self._build_event_backed_character_doc(name, support, graph_profile)
 
         event_query_scores = self._graph_event_query_scores(book_index, event_docs, center_name)
         event_rankings: list[tuple[float, dict[str, Any]]] = []
@@ -257,7 +283,7 @@ class GraphService(NovelSystemService):
                 score += 1.5
             event_rankings.append((score, event))
         event_rankings.sort(key=lambda item: (item[0], -item[1]["chapter"]), reverse=True)
-        event_limit = max(6, min(limit, 10))
+        event_limit = int(graph_budget["event_limit"])
         selected_events = [item[1] for item in event_rankings[:event_limit]]
         selected_events.sort(key=lambda item: item["chapter"])
 
@@ -325,6 +351,19 @@ class GraphService(NovelSystemService):
                 }
             )
 
+        # Build relationship evidence from relationship_graph corpora
+        relationship_evidence: dict[tuple[str, str], float] = defaultdict(float)
+        for rel_doc in book_index.corpora.get("relationship_graph", []):
+            title = str(rel_doc.get("title", ""))
+            if "/" not in title:
+                continue
+            left_raw, right_raw = [part.strip() for part in title.split("/", 1)]
+            left = self._canonicalize_graph_name(left_raw, known_names, graph_profile)
+            right = self._canonicalize_graph_name(right_raw, known_names, graph_profile)
+            if not left or not right or left == right:
+                continue
+            relationship_evidence[tuple(sorted((left, right)))] += 1.0
+
         for index, left_name in enumerate(selected_characters):
             left_profile = character_profiles.get(left_name)
             if not left_profile:
@@ -341,13 +380,14 @@ class GraphService(NovelSystemService):
                         left_profile["index"],
                         right_profile["index"],
                     )
-                if shared_events <= 0 and similarity < 0.12:
+                relationship_weight = relationship_evidence.get(tuple(sorted((left_name, right_name))), 0.0)
+                if shared_events <= 0 and similarity < 0.12 and relationship_weight <= 0:
                     continue
                 edges.append(
                     {
                         "source": f"char::{left_name}",
                         "target": f"char::{right_name}",
-                        "weight": round(shared_events * 1.4 + similarity * 6, 3),
+                        "weight": round(shared_events * 1.4 + similarity * 6 + relationship_weight, 3),
                         "type": "character_relation",
                         "label": f"shared_events={shared_events}, vector_similarity={similarity:.2f}",
                     }
@@ -363,7 +403,71 @@ class GraphService(NovelSystemService):
                 "character_count": sum(1 for node in nodes if node["type"] == "character"),
                 "event_count": len(selected_events),
                 "edge_count": len(edges),
+                "candidate_character_count": len(ranked_characters),
+                "candidate_event_count": len(normalized_events),
+                "density": graph_budget["density"],
+                "character_limit": character_limit,
+                "event_limit": event_limit,
             },
+        }
+
+    def _graph_candidate_tier(
+        self,
+        name: str,
+        *,
+        seed_names: set[str],
+        character_buckets: dict[str, list[dict[str, Any]]],
+        event_character_support: dict[str, dict[str, Any]],
+    ) -> int:
+        if name in seed_names:
+            return 1
+        if character_buckets.get(name) and event_character_support.get(name):
+            return 2
+        if character_buckets.get(name) and self._looks_like_graph_name(name):
+            return 3
+        return 99
+
+    def _compute_graph_budget(
+        self,
+        *,
+        density: str,
+        requested_limit: int,
+        candidate_character_count: int,
+        candidate_event_count: int,
+        scope_chapter_count: int,
+        has_center: bool,
+    ) -> dict[str, int | str]:
+        normalized_density = density if density in {"compact", "auto", "expanded"} else "auto"
+        requested_limit = max(8, requested_limit)
+
+        if normalized_density == "compact":
+            character_cap = min(14, requested_limit)
+            event_cap = min(10, requested_limit)
+            character_target = min(character_cap, max(8, candidate_character_count))
+            event_target = min(event_cap, max(6, candidate_event_count))
+        elif normalized_density == "expanded":
+            character_cap = min(42, max(requested_limit, 32))
+            event_cap = min(28, max(requested_limit, 22))
+            character_target = min(character_cap, max(20, round(candidate_character_count ** 0.55 * 5)))
+            event_target = min(event_cap, max(12, round(candidate_event_count ** 0.50 * 4)))
+        else:
+            character_cap = min(28, max(requested_limit, 24))
+            event_cap = min(18, max(requested_limit, 16))
+            character_target = min(character_cap, max(12, round(candidate_character_count ** 0.55 * 4)))
+            event_target = min(event_cap, max(8, round(candidate_event_count ** 0.50 * 3)))
+
+        if candidate_character_count:
+            character_target = min(character_target, candidate_character_count)
+        if candidate_event_count:
+            event_target = min(event_target, candidate_event_count)
+
+        if has_center and character_target < 1:
+            character_target = 1
+
+        return {
+            "density": normalized_density,
+            "character_limit": int(character_target),
+            "event_limit": int(event_target),
         }
 
     def _chapter_summary(self, book_index: Any, chapter: int) -> str:

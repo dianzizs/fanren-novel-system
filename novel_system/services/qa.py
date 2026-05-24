@@ -48,7 +48,7 @@ class QAServiceMixin:
 
         self.ensure_indexed(book_id)
         book_index = self.repo.load(book_id)
-        multimodal = request.test_harness.get("simulate") == "image_only_input"
+        multimodal = False
         planner, memory = self.planner.plan(
             request.user_query,
             request.scope,
@@ -61,7 +61,6 @@ class QAServiceMixin:
                 answer=self._copyright_refusal(request.user_query),
                 evidence=[],
                 confidence="high",
-                uncertainty="low",
                 scope=request.scope,
                 memory=memory.to_dict(),
             )
@@ -125,7 +124,6 @@ class QAServiceMixin:
             planner,
             request.scope,
             request.top_k,
-            request.test_harness.get("simulate"),
             book_id=book_id,
         )
         if request.retrieved_text:
@@ -196,24 +194,6 @@ class QAServiceMixin:
         )
         confidence = validation_result.confidence
 
-        # === 验证层: Spoiler Guard ===
-        total_chapters = int(book_index.manifest.get("chapter_count", 0))
-        event_timeline = book_index.corpora.get("event_timeline", [])
-        spoiler_risk = self.spoiler_guard.detect_spoiler(
-            content=answer,
-            scope=request.scope,
-            total_chapters=total_chapters,
-            event_timeline=event_timeline,
-        )
-        if spoiler_risk.level in ["medium", "high"]:
-            answer = self.spoiler_guard.redact_content(answer, spoiler_risk)
-            if spoiler_risk.level == "high":
-                confidence = "low"
-            elif spoiler_risk.level == "medium":
-                if confidence == "high":
-                    confidence = "medium"
-                elif confidence == "medium":
-                    confidence = "low"
 
         # === TRACING: 构建追踪数据 ===
         total_duration = (time.perf_counter() - start_time) * 1000
@@ -256,7 +236,6 @@ class QAServiceMixin:
             answer=answer,
             evidence=evidence,
             confidence=confidence,
-            uncertainty=_compute_deprecated_uncertainty(confidence),
             scope=request.scope,
             memory=memory.to_dict(),
             warnings=warnings,
@@ -270,7 +249,6 @@ class QAServiceMixin:
         planner: PlannerOutput,
         scope: Scope,
         top_k: int,
-        simulate: str | None,
         query_embedding: list[float] | None = None,
         book_id: str = "",
     ) -> list[RetrievalHit]:
@@ -287,7 +265,6 @@ class QAServiceMixin:
             targets=planner.retrieval_targets,
             chapter_scope=scope.chapters,
             top_k=top_k,
-            simulate=simulate,
             query_embedding=query_embedding,
         )
         return hits
@@ -310,7 +287,6 @@ class QAServiceMixin:
         planner: PlannerOutput,
         scope: Scope,
         top_k: int,
-        simulate: str | None,
         book_id: str = "",
     ) -> list[RetrievalHit]:
         profile = load_graph_profile(book_id) if book_id else None
@@ -329,7 +305,6 @@ class QAServiceMixin:
             targets=planner.retrieval_targets,
             chapter_scope=scope.chapters,
             top_k=top_k,
-            simulate=simulate,
             query_embedding=query_embedding,
         )
         original_hits = retriever.retrieve(
@@ -337,7 +312,6 @@ class QAServiceMixin:
             targets=planner.retrieval_targets,
             chapter_scope=scope.chapters,
             top_k=max(3, top_k // 2),
-            simulate=simulate,
             query_embedding=None,
         )
         seen: set[tuple[str, str]] = set()

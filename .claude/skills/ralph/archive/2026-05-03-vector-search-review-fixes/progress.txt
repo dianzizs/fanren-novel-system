@@ -1,8 +1,0 @@
-# Ralph Progress Log
-Started: Sat May 03     2026
----
-US-001: PASS - 消除 service.py 与 indexing.py 重复的向量索引构建逻辑
-  - Extracted _build_vector_indexes() shared method on BookIndexRepository
-  - build_from_txt() and _run_book_index() both delegate to it
-  - Moved import hashlib to module level in indexing.py; service.py no longer needs it
-  - All 243 tests pass

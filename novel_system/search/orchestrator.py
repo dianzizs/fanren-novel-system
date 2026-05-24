@@ -183,6 +183,70 @@ class SearchOrchestrator:
         # 使用 RRF 合并多通道结果
         merged = reciprocal_rank_fusion(hits, k=60)
 
+        # GraphRAG Graph Query
+        graph = getattr(book_index, "graph", None)
+        if graph is not None:
+            graph_hits = []
+            matched_nodes = []
+            for node in graph.nodes:
+                if node in query:
+                    matched_nodes.append(node)
+            
+            for node in matched_nodes:
+                first_ch = graph.nodes[node].get("first_chapter", 1)
+                if chapter_scope and first_ch > max(chapter_scope):
+                    continue
+                
+                neighbors = list(graph.neighbors(node))
+                if chapter_scope:
+                    neighbors = [
+                        n for n in neighbors
+                        if graph.nodes[n].get("first_chapter", 1) <= max(chapter_scope)
+                    ]
+                sorted_neighbors = sorted(neighbors, key=lambda n: graph[node][n].get("weight", 1), reverse=True)
+                
+                # 1. Pseudo-document for character node
+                aliases = graph.nodes[node].get("aliases", [])
+                alias_str = f"（别名：{'、'.join(aliases)}）" if aliases else ""
+                node_text = f"人物名：{node}{alias_str}。首次出现于第{first_ch}章。关联人物：{'、'.join(sorted_neighbors[:6])}。"
+                graph_hits.append({
+                    "target": "character_card",
+                    "document_id": f"graph-node-{node}",
+                    "document": {
+                        "id": f"graph-node-{node}",
+                        "chapter": first_ch,
+                        "title": f"【图谱人物卡】{node}",
+                        "text": node_text,
+                        "source": "知识图谱人物实体",
+                    },
+                    "score": 1.2,
+                    "channel": "graph",
+                })
+
+                # 2. Pseudo-documents for relationships
+                for n in sorted_neighbors[:3]:
+                    weight = graph[node][n].get("weight", 1)
+                    rel_text = graph[node][n].get("text", "")
+                    if not rel_text:
+                        rel_text = f"关系对：{node} 与 {n} 存在剧情关联（权重: {weight}）。"
+                    graph_hits.append({
+                        "target": "relationship_graph",
+                        "document_id": f"graph-edge-{node}-{n}",
+                        "document": {
+                            "id": f"graph-edge-{node}-{n}",
+                            "chapter": first_ch,
+                            "title": f"【图谱关系】{node} / {n}",
+                            "text": rel_text,
+                            "source": "知识图谱人物关系",
+                        },
+                        "score": 1.1,
+                        "channel": "graph",
+                    })
+
+            # Sort and append at most 3 graph hits to avoid overwhelming text chunks
+            graph_hits.sort(key=lambda x: x["score"], reverse=True)
+            merged.extend(graph_hits[:3])
+
         # 关键词加分（作为后处理，不影响 RRF 主排序）
         key_terms = self._extract_key_terms(query)
         logger.debug(f"Key terms extracted from query: {key_terms}")

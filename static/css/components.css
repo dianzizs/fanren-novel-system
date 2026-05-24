@@ -1,0 +1,358 @@
+/*
+ * 组件样式 — 按钮、输入框、状态标签、卡片
+ */
+
+/* ── 按钮基础 ── */
+button {
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: 10px 16px;
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 14px;
+  transition:
+    transform 0.15s var(--ease-out),
+    background-color 0.15s var(--ease-out),
+    border-color 0.15s var(--ease-out),
+    color 0.15s var(--ease-out),
+    box-shadow 0.15s var(--ease-out);
+}
+
+button:hover {
+  transform: translateY(-1px);
+}
+
+button:active {
+  transform: translateY(0);
+}
+
+button:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+.tab:focus-visible,
+.chapter-item:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+/* ── Primary 按钮 ── */
+.primary {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(37, 99, 235, 0.2);
+}
+
+.primary:hover {
+  background: var(--accent-hover);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+}
+
+.primary:active {
+  background: var(--accent-strong);
+}
+
+/* ── Secondary 按钮 ── */
+.secondary {
+  background: var(--bg-elevated);
+  border-color: var(--line);
+  color: var(--text);
+}
+
+.secondary:hover {
+  background: var(--surface);
+  border-color: var(--line-strong);
+}
+
+/* ── Block 按钮 ── */
+.block {
+  width: 100%;
+  margin-top: 14px;
+}
+
+/* ── 输入框 / Textarea ── */
+textarea,
+input[type="number"],
+input[type="text"],
+select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  background: var(--bg-elevated);
+  font-size: 14px;
+  transition:
+    border-color 0.15s var(--ease-out),
+    box-shadow 0.15s var(--ease-out);
+}
+
+textarea:focus,
+input[type="number"]:focus,
+input[type="text"]:focus,
+select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+textarea::placeholder,
+input::placeholder {
+  color: var(--subtle);
+}
+
+textarea {
+  resize: vertical;
+}
+
+.inline-fields {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.inline-fields span {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.field-label,
+.graph-control label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.field-row {
+  margin-top: 14px;
+}
+
+/* ── 状态标签 ── */
+.status-tag,
+.mini-tag,
+.graph-chip {
+  display: inline-flex;
+  width: fit-content;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.status-tag {
+  color: var(--status-ready-text);
+  border: 1px solid rgba(37, 99, 235, 0.2);
+  background: var(--status-ready-bg);
+}
+
+.status-tag.pending {
+  color: var(--status-wait-text);
+  border-color: rgba(245, 158, 11, 0.2);
+  background: var(--status-wait-bg);
+}
+
+.status-tag.indexing {
+  color: var(--status-wait-text);
+  border-color: rgba(245, 158, 11, 0.3);
+  background: var(--status-wait-bg);
+  animation: pulse-tag 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-tag {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.mini-tag {
+  color: #dc2626;
+  border: 1px solid rgba(220, 38, 38, 0.2);
+  background: #fee2e2;
+}
+
+/* ── 进度条 ── */
+.book-progress-bar {
+  height: 3px;
+  background: var(--surface);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.book-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-warm), var(--accent));
+  transition: width 0.4s ease;
+  border-radius: 2px;
+}
+
+.progress-bar {
+  height: 8px;
+  background: var(--surface);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-hover));
+  transition: width 0.3s ease;
+}
+
+/* ── Feedback Card ── */
+.feedback-card {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+}
+
+.feedback-card p {
+  margin-top: 8px;
+  line-height: 1.7;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.feedback-card.neutral {
+  border-color: var(--line);
+}
+
+.feedback-card.success {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.feedback-card.error {
+  border-color: #fca5a5;
+  background: #fef2f2;
+}
+
+.feedback-card.error strong {
+  color: #dc2626;
+}
+
+/* ── 卡片基础 ── */
+.book-card,
+.metric-card,
+.answer-card,
+.summary-card,
+.constraint-box,
+.version-box,
+.chart-box,
+.reader-sidebar,
+.reader-pane,
+.ask-panel,
+.graph-stage,
+.graph-detail {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+}
+
+.book-card,
+.metric-card,
+.answer-card,
+.summary-card,
+.constraint-box,
+.version-box,
+.chart-box {
+  padding: 16px;
+}
+
+.book-meta,
+.answer-meta,
+.metric-note,
+.panel-note {
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* ── 证据/角色/时间线/失败/基线卡片 ── */
+.evidence-card,
+.character-card,
+.timeline-card,
+.failure-card,
+.baseline-item {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+}
+
+.evidence-card p,
+.character-card p,
+.timeline-card p,
+.failure-card p,
+.baseline-item p {
+  margin-top: 6px;
+  line-height: 1.7;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+/* ── 确认对话框 ── */
+.confirm-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.confirm-dialog {
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  max-width: 400px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+}
+
+.confirm-dialog h3 {
+  margin-bottom: 12px;
+}
+
+.confirm-dialog p {
+  color: var(--muted);
+  margin-bottom: 20px;
+  font-size: 14px;
+}
+
+.confirm-dialog-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+/* ── 来源标签 ── */
+.source-tag {
+  display: inline-flex;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.source-tag.upload {
+  color: #2563eb;
+  background: #dbeafe;
+  border: 1px solid rgba(37, 99, 235, 0.2);
+}
+
+.source-tag.local {
+  color: var(--accent);
+  background: var(--accent-light);
+  border: 1px solid rgba(37, 99, 235, 0.2);
+}

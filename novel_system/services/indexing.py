@@ -73,7 +73,7 @@ class IndexingServiceMixin:
             manifest["indexed_at"] = datetime.now().isoformat()
         self.repo.update_book_manifest(book_id, manifest)
 
-    def start_book_index(self, book_id: str) -> dict[str, Any]:
+    def start_book_index(self, book_id: str, force: bool = False) -> dict[str, Any]:
         """异步启动书籍索引构建。
 
         在后台线程中执行索引构建，包括章节解析、切片、向量化等步骤。
@@ -81,6 +81,7 @@ class IndexingServiceMixin:
 
         Args:
             book_id: 书籍 ID
+            force: 是否强制重建索引，如果为 True，则跳过 "ready" 状态的检查
 
         Returns:
             包含 status 和 message 的状态字典
@@ -92,7 +93,7 @@ class IndexingServiceMixin:
         if manifest.get("status") == "indexing":
             return {"status": "indexing", "message": "正在分析中"}
 
-        if manifest.get("status") == "ready":
+        if manifest.get("status") == "ready" and not force:
             return {"status": "ready", "message": "已经分析完成"}
 
         self.set_book_indexing(book_id, "indexing", 0.0)
@@ -232,6 +233,10 @@ class IndexingServiceMixin:
         manifest = next((book for book in self.repo.list_books() if book["id"] == book_id), None)
         if not manifest:
             raise FileNotFoundError(f"Book {book_id} not found")
+
+        if manifest.get("status") == "indexing":
+            raise ValueError("Cannot delete book while it is indexing")
+
 
         # 删除索引目录
         index_path = self.config.data_dir / "books" / book_id

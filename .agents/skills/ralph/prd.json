@@ -1,18 +1,19 @@
 {
   "project": "小王一号",
-  "branchName": "ralph/knowledge-graph-filtering",
-  "description": "改进知识图谱质量 — 通过在离线索引阶段引入 LLM 过滤候选人名以净化索引产物，并修复 graph_name_policy 中的命名规范化算法 Bug",
+  "branchName": "ralph/adaptive-graph-density",
+  "description": "Make the knowledge graph choose an appropriate number of characters and events from the actual indexed content instead of always showing a small fixed slice.",
   "userStories": [
     {
       "id": "US-001",
-      "title": "修复 graph_name_policy.py 中的算法 Bug",
-      "description": "As a developer, I want to fix name self-matching and known-names filtering in graph_name_policy.py so that generic noise words are rejected and proper suffixes are normalized.",
+      "title": "Add failing tests for adaptive graph budget",
+      "description": "As a developer, I want to write tests that capture the expected behavior of the adaptive graph budget helper before implementing it.",
       "acceptanceCriteria": [
-        "在 normalize_name_with_profile 的循环中跳过 name == base，以避免绕过 looks_like_graph_name 检查或阻碍更短前缀/后缀的规范化",
-        "在 filter_candidates_with_evidence 中构建 known_names 时，使用 looks_like_graph_name 对 candidates 键进行过滤",
-        "新增单元测试验证 normalize_name_with_profile 的规范化逻辑，确保后缀如 '韩立现' -> '韩立'，且 '时间' 等噪声返回 None",
-        "Typecheck passes",
-        "Tests pass"
+        "Create tests/test_interactive_graph_dynamic_budget.py",
+        "Test auto budget expands when many candidates (character_limit > 14, event_limit > 10)",
+        "Test compact budget preserves current small graph behavior (8-14 chars, 6-10 events)",
+        "Test invalid density falls back to auto",
+        "All 3 tests fail because _compute_graph_budget does not exist yet",
+        "Typecheck passes"
       ],
       "priority": 1,
       "passes": false,
@@ -20,15 +21,16 @@
     },
     {
       "id": "US-002",
-      "title": "离线索引阶段集成 LLM 候选人名过滤",
-      "description": "As a developer, I want to use MiniMax API to filter candidate names during indexing to eliminate noisy words early in the pipeline.",
+      "title": "Implement adaptive budget helper in GraphService",
+      "description": "As a developer, I want to add _compute_graph_budget to GraphService so the graph can dynamically size based on candidate counts.",
       "acceptanceCriteria": [
-        "在 BookIndexRepository 类中新增 _filter_names_with_llm 方法，使用 MiniMaxClient 过滤候选人名",
-        "按 50 个为一组分批候选词，向 MiniMax 发送 Few-shot 对话提示词以分类判断人名与杂质",
-        "将 _filter_names_with_llm 接入 _build_character_cards 和 _build_character_registry",
-        "确保在 MINIMAX_API_KEY 未配置或 API 请求失败时有降级退避逻辑，不中断构建流程",
-        "Typecheck passes",
-        "Tests pass"
+        "Add _compute_graph_budget method to GraphService in novel_system/graph_service.py",
+        "Support density=compact|auto|expanded with correct caps (compact: 8-14 chars/6-10 events, auto: 12-28 chars/8-18 events, expanded: 20-42 chars/12-28 events)",
+        "Invalid density falls back to auto",
+        "Auto formulas use candidate_count ** 0.55 * 4 for characters and candidate_count ** 0.50 * 3 for events",
+        "Reserve slot for center character when has_center=True",
+        "Tests in test_interactive_graph_dynamic_budget.py pass",
+        "Typecheck passes"
       ],
       "priority": 2,
       "passes": false,
@@ -36,15 +38,83 @@
     },
     {
       "id": "US-003",
-      "title": "运行索引重构及人物图谱验证",
-      "description": "As a product owner, I want to re-index the novel and verify that the knowledge graph is clean and free of noise words.",
+      "title": "Wire density parameter through API and graph selection",
+      "description": "As a developer, I want to add density query parameter to the graph endpoint and use adaptive budgets in get_interactive_graph.",
       "acceptanceCriteria": [
-        "对凡人修仙传运行 reindex 脚本（如 python scripts/build_index.py 或通过 api 触发索引），完成全部产物构建",
-        "检查生成的 character_registry.json 和 character_card.json 不再包含 '时间'、'成功'、'方法'、'章完'、'许多' 等噪声词",
-        "运行 pytest 所有测试确保均通过",
+        "Add density='auto' query parameter to /api/books/{book_id}/graph endpoint in novel_system/api.py",
+        "Update get_interactive_graph signature in graph_service.py to accept density parameter",
+        "Replace fixed character_limit=max(8,min(14,limit)) and event_limit=max(6,min(limit,10)) with budget-derived values",
+        "Add candidate_character_count, candidate_event_count, density, character_limit, event_limit to returned stats",
+        "Existing graph endpoint remains backward compatible (density defaults to 'auto')",
+        "Tests pass including test_graph_stats_include_dynamic_budget_metadata",
         "Typecheck passes"
       ],
       "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Add candidate quality tiers to prevent bad name expansion",
+      "description": "As a developer, I want to rank graph candidates by evidence tier so expanded graphs fill from strong candidates first and don't amplify bad names.",
+      "acceptanceCriteria": [
+        "Add _graph_candidate_tier method: Tier 1=seed/registry with scene evidence, Tier 2=character cards+events, Tier 3=cards+looks_like_graph_name, Tier 99=excluded",
+        "Sort ranked_characters by tier priority before score",
+        "Skip Tier 99 candidates during selection",
+        "Test verifies expanded mode does not select unsupported fragments ahead of seeded names",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Use relationship graph as optional edge evidence",
+      "description": "As a developer, I want to use relationship_graph data as additive edge evidence so character connections appear even without shared events.",
+      "acceptanceCriteria": [
+        "Build relationship_evidence dict from relationship_graph corpora (parse title 'A/B' pairs)",
+        "Include relationship_weight in edge decision: skip only if shared_events<=0 AND similarity<0.12 AND relationship_weight<=0",
+        "Add relationship_weight to edge weight formula",
+        "Test verifies two characters get a character_relation edge from relationship_graph evidence alone",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Update frontend to use density parameter and show metadata",
+      "description": "As a user, I want to choose graph density (auto/compact/expanded) and see how many candidates are available vs displayed.",
+      "acceptanceCriteria": [
+        "Add density select control (auto/compact/expanded) to both graph toolbars in dashboard.html",
+        "Add currentGraphDensity() and currentDetailGraphDensity() helpers in app.js",
+        "Change loadGraph() to send density instead of limit:20",
+        "Change loadDetailGraph() to send density parameter",
+        "Show stats as '显示 24/73 人物 · 16/41 事件 · 边 180 · auto'",
+        "Wire density change events to reload graphs",
+        "Static test test_dashboard_requests_graph_density_auto passes",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "Reduce label clutter for larger graphs",
+      "description": "As a user, I want larger graphs to show labels only on important nodes so the canvas remains readable.",
+      "acceptanceCriteria": [
+        "Add shouldDrawGraphLabel(node, index) function in app.js",
+        "When total nodes <= 35, always show labels",
+        "When total > 35, show labels only for: selected/hovered node, center node, top 18 characters, top 8 events",
+        "Apply to both workspace and detail graph drawing",
+        "Static test test_large_graph_label_helper_exists passes",
+        "Typecheck passes"
+      ],
+      "priority": 7,
       "passes": false,
       "notes": ""
     }

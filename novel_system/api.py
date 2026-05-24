@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import mimetypes
 import re
 import unicodedata
 from pathlib import Path
@@ -92,6 +93,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    mimetypes.add_type("application/javascript", ".js")
     app.mount("/static", StaticFiles(directory=str(config.root_dir / "static")), name="static")
     templates = Jinja2Templates(directory=str(config.root_dir / "templates"))
 
@@ -119,12 +121,15 @@ def create_app() -> FastAPI:
         return service.get_token_stats()
 
     @app.delete("/api/books/{book_id}")
-    async def delete_book(book_id: str):
+    def delete_book(book_id: str):
         book_id = _normalize_book_id(book_id)
         try:
             return service.delete_book(book_id)
         except FileNotFoundError as e:
             raise HTTPException(status_code=404, detail=str(e))
+        except ValueError as e:
+            raise HTTPException(status_code=409, detail=str(e))
+
 
     @app.post("/api/books")
     async def register_book(
@@ -191,10 +196,10 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail=str(e))
 
     @app.post("/api/books/{book_id}/start-index")
-    async def start_book_index(book_id: str):
+    async def start_book_index(book_id: str, force: bool = False):
         book_id = _normalize_book_id(book_id)
         try:
-            return service.start_book_index(book_id)
+            return service.start_book_index(book_id, force=force)
         except FileNotFoundError as e:
             raise HTTPException(status_code=404, detail=str(e))
 
@@ -253,10 +258,11 @@ def create_app() -> FastAPI:
         chapter_end: int | None = None,
         center: str | None = None,
         limit: int = 18,
+        density: str = "auto",
     ):
         book_id = _normalize_book_id(book_id)
         scope = Scope(chapters=[chapter_start, chapter_end]) if chapter_start and chapter_end else Scope()
-        return service.get_interactive_graph(book_id, scope, center=center, limit=limit)
+        return service.get_interactive_graph(book_id, scope, center=center, limit=limit, density=density)
 
     @app.get("/api/dashboard")
     async def get_dashboard():

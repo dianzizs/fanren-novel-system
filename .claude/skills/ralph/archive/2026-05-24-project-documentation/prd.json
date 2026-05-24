@@ -1,0 +1,73 @@
+{
+  "project": "小王一号",
+  "branchName": "ralph/project-documentation",
+  "description": "项目接管第一阶段 — 通过4个分析性Prompt建立对项目的全面理解，输出项目总览、架构文档、模块索引和README草稿",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "项目总览分析",
+      "description": "As a 新接手的开发者, I want to 阅读项目关键文件并输出项目总览分析 so that 我能快速理解项目是什么、怎么运行、有哪些模块。",
+      "acceptanceCriteria": [
+        "阅读 README.md、pyproject.toml、requirements.txt、.env.example、根目录结构、novel_system 源码目录结构",
+        "阅读启动入口文件 (start_server.py, api.py)",
+        "阅读配置文件 (config.py, pyproject.toml)",
+        "输出一：项目基本信息（类型、技术栈、包管理器、启动命令）",
+        "输出二：目录结构说明表格",
+        "输出三：项目启动链路",
+        "输出四：核心模块初步判断",
+        "输出五：疑似复杂或臃肿的位置",
+        "输出六：下一步建议阅读的文件清单"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "生成项目说明文档草稿",
+      "description": "As a 新接手的开发者, I want to 生成3个核心文档的草稿 so that 后续维护有清晰的参考依据。",
+      "acceptanceCriteria": [
+        "生成 docs/00-project-overview.md 草稿（项目简介、目标、核心功能、状态、功能边界）",
+        "生成 docs/01-architecture.md 草稿（技术栈、架构、启动流程、页面结构、数据流、状态管理、依赖说明）",
+        "生成 docs/02-directory-map.md 草稿（根目录、源码目录、各子目录说明及使用建议）",
+        "内容基于实际项目，不确定处标记'待确认'",
+        "不创建文件，仅输出文档内容"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "建立模块索引",
+      "description": "As a 新接手的开发者, I want to 对页面文件、组件、API、状态管理、工具函数、业务模块建立索引表 so that 能快速定位每个文件的作用和引用关系。",
+      "acceptanceCriteria": [
+        "分析所有页面文件、组件文件、API请求文件、状态管理文件、工具函数文件、主要业务模块",
+        "输出模块索引表：路径、类型、主要作用、被谁引用、重要程度、当前状态、后续建议",
+        "当前状态使用规范分类：核心使用中/普通使用中/疑似重复/疑似废弃/待确认/风险较高暂不处理",
+        "不删除文件、不修改代码",
+        "无法确认引用关系的标记为'待确认'",
+        "不凭文件名判断废弃，结合实际引用关系"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "补齐 README",
+      "description": "As a 新接手的开发者, I want to 生成一个完整准确的 README.md 草稿 so that 项目有清晰的门面文档。",
+      "acceptanceCriteria": [
+        "包含项目名称、简介、技术栈、环境要求、安装依赖、本地启动、构建命令",
+        "包含项目目录结构、核心功能说明、开发注意事项、文档入口",
+        "不写不存在的功能",
+        "不确定的信息标记为'待确认'",
+        "内容简洁，风格适合个人接管项目和后续维护",
+        "先输出内容，不直接修改文件"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

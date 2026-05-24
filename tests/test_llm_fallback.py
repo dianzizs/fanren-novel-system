@@ -51,8 +51,10 @@ def test_minimax_429_falls_back_to_mimo(mock_sleep, mock_post):
         "usage": {"input_tokens": 10, "output_tokens": 10, "cache_read_input_tokens": 0},
     }
 
+    from novel_system.llm import MiniMaxDirectClient
+    max_retries = MiniMaxDirectClient.MAX_RETRIES
     # MiniMax will be retried MAX_RETRIES+1 times, then fallback kicks in
-    mock_post.side_effect = [minimax_resp] * (4) + [mimo_resp]  # 3 retries + 1 attempt = 4 minimax calls
+    mock_post.side_effect = [minimax_resp] * (max_retries + 1) + [mimo_resp]
 
     client = MiniMaxClient(_config())
     res = client.chat([{"role": "user", "content": "hi"}])

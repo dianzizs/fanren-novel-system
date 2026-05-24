@@ -29,13 +29,6 @@ from .services import (
 logger = logging.getLogger(__name__)
 
 
-def _compute_deprecated_uncertainty(confidence: str) -> str:
-    """向后兼容：将 confidence 转换为旧 uncertainty 格式。"""
-    mapping = {"high": "low", "medium": "medium", "low": "high"}
-    return mapping.get(confidence, "medium")
-
-
-
 class NovelSystemService(
     QAServiceMixin,
     ContinuationServiceMixin,

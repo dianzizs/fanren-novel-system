@@ -163,6 +163,20 @@ class BookImportArtifactsTest(unittest.TestCase):
         self.assertEqual(status_response.status_code, 200, status_response.text)
         self.assertEqual(status_response.json()["book_id"], book_id)
 
+    def test_delete_book_while_indexing_fails(self) -> None:
+        manifest = self.upload_book("deleting-indexing-book.txt", sample_book(2))
+        book_id = manifest["id"]
+        self.client.post(f"/api/books/{book_id}/start-index").raise_for_status()
+
+        response = self.client.delete(f"/api/books/{book_id}")
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("indexing", response.json()["detail"])
+
+        # Wait for background thread to complete to release file locks on Windows
+        self.wait_until_ready(book_id)
+
+
+
 
 class NormalizeBookIdTest(unittest.TestCase):
     def test_single_encoded_id_returns_unchanged(self):

@@ -1,4 +1,0 @@
-# Ralph Progress Log
-Started: Mon May  4 01:05:52     2026
----
-US-001: PASS — Restored reranker module, added config fields, wired into HybridRetriever and NovelSystemService. 238 tests pass.

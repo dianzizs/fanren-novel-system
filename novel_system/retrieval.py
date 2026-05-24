@@ -46,7 +46,6 @@ class HybridRetriever:
         targets: list[str],
         chapter_scope: list[int],
         top_k: int = 6,
-        simulate: str | None = None,
         query_embedding: list[float] | None = None,
     ) -> list[RetrievalHit]:
         """Retrieve documents using the search orchestrator.
@@ -56,7 +55,6 @@ class HybridRetriever:
             targets: List of target names to search.
             chapter_scope: Chapter range for filtering.
             top_k: Maximum results to return.
-            simulate: Simulation mode for testing (deprecated).
             query_embedding: Optional query vector for dense search.
 
         Returns:

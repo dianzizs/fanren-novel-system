@@ -1,73 +1,210 @@
-# 小王一号 - 小说问答系统
+# 小王一号 — AI 开发规则
 
-## 项目概述
+> 版本：2.0 | 更新日期：2026-05-23
+> 本文件是 AI 每次开发的行为契约，必须在任何操作前完整阅读。
 
-这是一个基于 FastAPI 的小说问答系统，支持对小说内容进行问答、续写等操作。
+---
 
-## 环境配置
+## 一、每次开发前必须阅读的文档
 
-**重要：本项目使用 conda 的 chaishu 环境**
+按顺序阅读，不得跳过：
 
-运行 Python 命令时，必须使用：
-```bash
-conda run -n chaishu python <command>
+1. `docs/00_项目总览.md` — 项目定位、架构一句话、当前可用能力、已知风险
+2. `docs/01_目录结构说明.md` — 每个目录和文件的用途、状态、是否可删
+3. `docs/02_技术栈与启动流程.md` — 技术栈版本、18 个 API 路由、启动调用链
+4. `docs/03_核心模块说明.md` — 每个模块的职责、入口、依赖、边界问题
+5. `docs/09_变更记录.md` — 最近的改动，避免重复或冲突
+6. `docs/10_待办与风险.md` — P0/P1 风险，避免踩坑
+
+如果任务涉及特定模块，还需阅读：
+- 接口变更 → `docs/02_技术栈与启动流程.md` 中的路由表
+- 检索/问答链路 → `docs/03_核心模块说明.md` 中的边界问题表
+- 文件清理 → `docs/04_文件用途审计表.md` + `docs/05_疑似冗余文件清单.md`
+
+---
+
+## 二、修改代码前必须说明的内容
+
+在写任何代码之前，必须先输出以下声明（不得省略）：
+
+```
+【修改声明】
+- 任务描述：[一句话说明要做什么]
+- 涉及文件：[列出将要修改的文件，精确到文件名]
+- 修改范围：[描述改动的函数/类/行范围]
+- 不会触碰：[明确列出不会修改的相邻文件或模块]
+- 验证方式：[说明如何确认改动正确，如运行哪个测试]
+- 文档影响：[改动后需要更新哪些 docs/ 文件]
 ```
 
-或者激活环境后运行：
-```bash
-conda activate chaishu
-python <command>
+如果无法填写上述任意一项，说明上下文不足，必须先阅读相关文档再继续。
+
+---
+
+## 三、AI 可以做的事
+
+- 修改 `novel_system/` 下已存在的 `.py` 文件中的函数或类
+- 修改 `static/app.js`、`templates/dashboard.html`、`static/styles.css`
+- 在 `tests/` 下修改或新增测试文件（测试文件命名必须以 `test_` 开头）
+- 更新 `docs/` 下已存在的文档
+- 在 `docs/09_变更记录.md` 追加变更条目
+- 修改 `requirements.txt`（需说明新增依赖的用途和版本）
+- 修改 `pyproject.toml`（需说明修改原因）
+- 修改 `.env.example`（不得修改 `.env`）
+
+---
+
+## 四、AI 禁止做的事
+
+以下操作**一律禁止**，无论理由多充分：
+
+| 禁止行为 | 原因 |
+|----------|------|
+| 在 `novel_system/` 下新建 `.py` 文件 | 项目已有冗余文件，禁止继续膨胀 |
+| 删除任何 `.py` 文件 | 删除前必须经过人工审计确认 |
+| 删除任何 `tests/test_*.py` 文件 | 测试是行为契约，不得单方面移除 |
+| 重命名现有模块或函数（除非任务明确要求） | 会破坏所有调用方 |
+| 修改 `novel_system/models.py` 中的 Pydantic 模型字段（除非任务明确要求） | 会破坏序列化和 API 契约 |
+| 一次性修改超过 3 个文件 | 必须拆分为多步，每步确认后再继续 |
+| 在单次输出中超过 150 行代码 | 超过则分批输出，每批确认后继续 |
+| 修改 `.env` 文件 | 包含生产密钥，禁止触碰 |
+| 在根目录新建任何文件 | 根目录已有临时文件堆积，禁止继续 |
+| 对 `data/` 目录下的任何文件做写操作 | 数据目录由运行时管理，不得手动修改 |
+| 跳过修改声明直接写代码 | 违反本规则的修改视为无效 |
+| 声称"测试通过"但未实际运行测试命令 | 必须提供实际命令输出作为证据 |
+
+---
+
+## 五、新建文件规则
+
+新建文件需满足**全部**以下条件，缺一不可：
+
+1. 在修改声明中明确说明"需要新建文件，原因是现有文件无法承载此功能"
+2. 说明新文件放在哪个目录、命名规则是什么
+3. 说明新文件与现有哪些文件存在依赖关系
+4. 用户明确确认后才能创建
+
+允许新建的场景：
+- `tests/` 下新增测试文件（无需额外确认）
+- `docs/` 下新增文档文件（无需额外确认，但需在 `09_变更记录.md` 登记）
+
+---
+
+## 六、删除文件规则
+
+删除任何文件前必须：
+
+1. 在 `docs/04_文件用途审计表.md` 或 `docs/05_疑似冗余文件清单.md` 中确认该文件已被标记为"可删除"
+2. 用 `grep` 确认该文件在整个项目中没有被其他文件 import 或引用
+3. 在修改声明中列出删除理由和确认步骤
+4. 用户明确确认后才能执行删除
+
+禁止以"清理冗余"为由批量删除文件，每次最多删除 1 个文件。
+
+---
+
+## 七、重构规则
+
+重构定义：改变代码结构但不改变外部行为（如拆分函数、移动代码、重命名内部变量）。
+
+重构前必须：
+1. 确认现有测试覆盖了被重构代码的核心行为
+2. 如果测试覆盖不足，先补测试，再重构
+3. 重构范围限定在单个文件内，不得跨文件重构
+4. 重构后运行 `conda run -n chaishu python -m pytest` 确认无回归
+
+禁止在修 Bug 或加功能的同时顺手重构，这两件事必须分开做。
+
+---
+
+## 八、文档更新规则
+
+以下情况**必须**同步更新文档，不得遗漏：
+
+| 代码变更 | 必须更新的文档 |
+|----------|----------------|
+| 新增或修改 API 路由 | `docs/02_技术栈与启动流程.md` 中的路由表 |
+| 新增或修改模块职责 | `docs/03_核心模块说明.md` |
+| 新增或删除文件 | `docs/01_目录结构说明.md` |
+| 修改启动方式或环境变量 | `docs/02_技术栈与启动流程.md` + 本文件的"常用命令"节 |
+| 修改 Pydantic 模型 | `docs/03_核心模块说明.md` 中对应模块的说明 |
+| 任何代码变更 | `docs/09_变更记录.md`（追加条目） |
+
+文档更新必须在同一次任务中完成，不得"留到下次"。
+
+---
+
+## 九、变更记录规则
+
+每次完成任何代码或文档修改后，必须在 `docs/09_变更记录.md` 追加一条记录，格式如下：
+
+```markdown
+### [日期] [变更类型] [一句话描述]
+
+- **涉及文件**：`文件路径`
+- **变更内容**：具体改了什么
+- **原因**：为什么改
+- **验证**：运行了什么命令，结果如何
 ```
 
-## 常用命令
+变更类型取值：`feat`（新功能）、`fix`（修复）、`refactor`（重构）、`docs`（文档）、`chore`（杂项）、`delete`（删除文件）
 
-### 启动服务
-```bash
-conda run -n chaishu python -m novel_system.api
-```
+---
 
-### 运行测试
+## 十、测试与构建检查规则
+
+### 修改代码后必须运行
+
 ```bash
+# 运行全量测试
 conda run -n chaishu python -m pytest
+
+# 如果只改了特定模块，可以只跑相关测试（但最终必须跑全量）
+conda run -n chaishu python -m pytest tests/test_<模块名>.py -v
 ```
 
-### 安装依赖
+### 声称"完成"前的检查清单
+
+在说"修改完成"或"可以提交"之前，必须确认以下全部通过：
+
+- [ ] `python -m pytest` 输出无 FAILED、无 ERROR
+- [ ] 修改声明中列出的所有文件已修改完毕
+- [ ] `docs/09_变更记录.md` 已追加本次变更条目
+- [ ] 涉及的 docs/ 文档已同步更新
+- [ ] 没有引入新的 `print()` 调试语句（使用 tracing 模块代替）
+- [ ] 没有硬编码的文件路径或 API Key
+
+如果测试失败，禁止声称"完成"，必须先修复再确认。
+
+---
+
+## 十一、环境与启动
+
 ```bash
+# 正确的启动命令（使用 start_server.py，不是 python -m novel_system.api）
+conda run -n chaishu python start_server.py
+
+# 运行测试
+conda run -n chaishu python -m pytest
+
+# 安装依赖
 conda run -n chaishu pip install -r requirements.txt
 ```
 
-## 代码结构
+**注意**：`AGENTS.md` 旧版本中的 `python -m novel_system.api` 命令已废弃，`api.py` 没有 `__main__` 块，实际入口是 `start_server.py`。
 
-- `novel_system/service.py` - 核心服务逻辑，包含 `ask()` 和 `continue_story()` 函数
-- `novel_system/models.py` - Pydantic 数据模型
-- `novel_system/planner.py` - 查询规划和重写
-- `novel_system/retrieval.py` - 检索逻辑
-- `novel_system/tracing.py` - 追踪日志基础设施
+---
 
-## Tracing 功能
+## 十二、Superpowers Skill 路由
 
-系统已集成追踪功能，可通过 `debug=true` 参数启用：
+| 场景 | 使用的 Skill |
+|------|-------------|
+| 调试、测试失败、检索异常、validator/planner 行为不符预期 | `systematic-debugging` |
+| 新增功能、修改行为、重构 | `brainstorming` → `test-driven-development` |
+| 制定计划、分步骤方案 | `writing-plans` |
+| 收到 code review 反馈 | `receiving-code-review` |
+| 主动发起代码审查 | `requesting-code-review` |
+| 准备声称"修好了/可以提交" | `verification-before-completion` |
+| 收尾分支、整理合并流程 | `finishing-a-development-branch` |
 
-```bash
-curl -X POST "http://localhost:8000/api/books/{book_id}/ask" \
-  -H "Content-Type: application/json" \
-  -d '{"user_query": "问题内容", "debug": true}'
-```
-
-环境变量控制：
-- `TRACE_ENABLED=true` - 启用追踪日志
-- `TRACE_LOG_LEVEL=INFO` - 日志级别
-
-## Codex / Superpowers Routing
-
-本仓库优先复用已安装的全局 superpowers skills，不额外假设项目级 skills 已存在。
-
-- 调试、trace、检索异常、测试失败、validator / planner / retrieval 行为不符预期：先考虑 `systematic-debugging`
-- 新增功能、修改行为、重构：先考虑 `brainstorming`；进入代码实现后考虑 `test-driven-development`
-- 用户明确要计划、分步骤方案、roadmap：优先 `writing-plans`
-- 用户贴 review / reviewer / code review 反馈：优先 `receiving-code-review`
-- 用户要求做一次代码审查：优先 `requesting-code-review`
-- 准备声称“修好了 / 可以提交 / 可以合并 / tests pass”：优先 `verification-before-completion`
-- 准备收尾分支、整理合并流程：优先 `finishing-a-development-branch`
-
-维护 Codex 路由配置时，使用 `tests/test_claude_skill_router.py` 作为回归验证，避免只改提示词不验行为。
+维护 Skill 路由时，使用 `tests/test_claude_skill_router.py` 作为回归验证。

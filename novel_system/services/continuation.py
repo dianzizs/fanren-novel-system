@@ -73,7 +73,6 @@ class ContinuationServiceMixin:
             planner,
             request.scope,
             request.top_k,
-            request.test_harness.get("simulate"),
             book_id=book_id,
         )
         retrieval_duration = (time.perf_counter() - retrieval_start) * 1000
@@ -104,23 +103,11 @@ class ContinuationServiceMixin:
         if cont_validation.world_issues:
             validation.setdefault("notes", []).extend(cont_validation.world_issues)
 
-        # === 验证层: Spoiler Guard ===
-        total_chapters = int(book_index.manifest.get("chapter_count", 0))
-        event_timeline = book_index.corpora.get("event_timeline", [])
-        spoiler_risk = self.spoiler_guard.detect_spoiler(
-            content=answer,
-            scope=request.scope,
-            total_chapters=total_chapters,
-            event_timeline=event_timeline,
-        )
-        if spoiler_risk.level in ["medium", "high"]:
-            answer = self.spoiler_guard.redact_content(answer, spoiler_risk)
-            validation.setdefault("notes", []).append("检测到剧透风险，已处理")
 
-        uncertainty = "medium" if validation.get("adjusted") else "low"
+
+        confidence = "medium" if validation.get("adjusted") else "high"
         if cont_validation.overall_score < 0.7:
-            uncertainty = "medium"
-        confidence = "high" if uncertainty == "low" else ("medium" if uncertainty == "medium" else "low")
+            confidence = "medium"
 
         # === TRACING: 构建追踪数据 ===
         total_duration = (time.perf_counter() - start_time) * 1000
@@ -169,7 +156,6 @@ class ContinuationServiceMixin:
             planner=planner,
             answer=answer,
             evidence=evidence,
-            uncertainty=uncertainty,
             scope=request.scope,
             validation=validation,
             trace=continuation_trace if request.debug else None,

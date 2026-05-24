@@ -166,6 +166,14 @@ function currentGraphScope() {
   };
 }
 
+function currentGraphDensity() {
+  return $("#graph-density")?.value || "auto";
+}
+
+function currentDetailGraphDensity() {
+  return $("#detail-graph-density")?.value || "auto";
+}
+
 function syncGraphScopeToAsk() {
   const askScope = currentAskScope();
   if ($("#graph-scope-start")) {
@@ -260,13 +268,18 @@ async function loadBooks() {
   bookCards.innerHTML = books.map((book) => {
     const isActive = String(book.id) === String(bookId);
     const status = book.status || "pending";
-    const actionBtn = status === "pending"
+    const primaryAction = status === "pending"
       ? `<button class="start-index-btn secondary" data-book-id="${escapeHtml(book.id)}">开始分析</button>`
-      : status === "indexing"
+      : status === "ready"
+      ? `<button class="open-book-btn secondary" data-book-id="${escapeHtml(book.id)}">查看分析</button>`
+      : "";
+    const statusBadge = status === "indexing"
       ? `<span class="status-tag indexing">分析中 ${Math.round((book.index_progress || 0) * 100)}%</span>`
       : status === "error"
       ? `<span class="status-tag error">分析失败</span>`
-      : `<span class="status-tag ready">已就绪</span>`;
+      : status === "ready"
+      ? `<span class="status-tag ready">已就绪</span>`
+      : `<span class="status-tag pending">待分析</span>`;
     const progressBar = status === "indexing"
       ? `<div class="book-progress-bar"><div class="book-progress-fill" style="width:${Math.round((book.index_progress || 0) * 100)}%"></div></div>`
       : "";
@@ -276,11 +289,11 @@ async function loadBooks() {
     return `
       <div class="book-card ${isActive ? "active" : ""}">
         <div class="book-card-actions">
-          ${actionBtn}
           <button class="delete-book-btn" data-book-id="${escapeHtml(book.id)}" data-book-title="${escapeHtml(book.title)}">删除</button>
         </div>
         <div class="status-row">
           ${sourceTag}
+          ${statusBadge}
           ${isActive ? "<span class='mini-tag'>当前工作本</span>" : ""}
         </div>
         ${progressBar}
@@ -289,6 +302,7 @@ async function loadBooks() {
         <div class="book-meta">章节数：${escapeHtml(book.chapter_count || "-")}</div>
         <div class="book-meta">切片数：${escapeHtml(book.chunk_count || "-")}</div>
         <div class="book-meta">${escapeHtml(book.source_path || "未记录来源路径")}</div>
+        ${primaryAction ? `<div class="book-primary-action">${primaryAction}</div>` : ""}
       </div>
     `;
   }).join("");
@@ -358,7 +372,11 @@ function showDeleteConfirmDialog(bookId, bookTitle) {
       await loadStorageStats();
       setWorkspaceStatus("书目已删除", "ready");
     } catch (error) {
-      handleActionError(error, null, "删除失败");
+      if (error.message.includes("indexing") || error.message.includes("409")) {
+        alert("Cannot delete book while indexing");
+      } else {
+        handleActionError(error, null, "删除失败");
+      }
       btn.disabled = false;
       btn.textContent = "确认删除";
     }
@@ -468,7 +486,7 @@ async function askQuestion() {
       <strong>回答</strong>
       <p>${formatMultiline(result.answer || "暂无回答。")}</p>
       <div class="answer-meta">
-        任务类型：${escapeHtml(result.planner?.task_type || "-")} · 不确定性：${escapeHtml(result.uncertainty ?? "-")}
+        任务类型：${escapeHtml(result.planner?.task_type || "-")} · 置信度：${escapeHtml(result.confidence ?? "-")}
       </div>
     `;
 
@@ -575,33 +593,82 @@ async function loadDashboard() {
 
 async function rebuildIndex() {
   const button = $("#index-book-btn");
+  if (button && button.disabled) return;
   setButtonLoading(button, true, "构建中...");
   setWorkspaceStatus("正在重建索引", "busy");
 
+  const currentPollBookId = bookId;
+
   try {
-    await fetchJson(`/api/books/${encodeURIComponent(bookId)}/index`, { method: "POST" });
-    await loadBooks();
-    await loadReader(currentChapter);
-    await loadDashboard();
-    await loadGraph();
-    setWorkspaceStatus("索引已重建", "ready");
+    await fetchJson(`/api/books/${encodeURIComponent(currentPollBookId)}/start-index?force=true`, { method: "POST" });
+
+    const pollStart = Date.now();
+    const timeout = 30 * 60 * 1000;
+
+    const poll = async () => {
+      if (bookId !== currentPollBookId) {
+        setButtonLoading(button, false, "构建中...");
+        return;
+      }
+      if (Date.now() - pollStart > timeout) {
+        handleActionError(new Error("重建索引超时"), "#book-cards", "超时提示");
+        setWorkspaceStatus("重建索引超时", "error");
+        setButtonLoading(button, false, "构建中...");
+        return;
+      }
+
+      try {
+        const result = await fetchJson(`/api/books/${encodeURIComponent(currentPollBookId)}/status`);
+        if (result.status === "ready") {
+          await loadBooks();
+          await loadReader(currentChapter);
+          await loadDashboard();
+          await loadGraph();
+          setWorkspaceStatus("索引已重建", "ready");
+          setButtonLoading(button, false, "构建中...");
+        } else if (result.status === "error") {
+          handleActionError(new Error(result.message || "重建失败"), "#book-cards", "重建错误");
+          setWorkspaceStatus("重建索引失败", "error");
+          setButtonLoading(button, false, "构建中...");
+        } else {
+          let pct = (result.progress * 100).toFixed(0);
+          setWorkspaceStatus(`正在重建索引 (${pct}%)`, "busy");
+          setTimeout(poll, 2000);
+        }
+      } catch (error) {
+        console.error("Polling error:", error);
+        setTimeout(poll, 2000);
+      }
+    };
+
+    poll();
   } catch (error) {
     handleActionError(error, "#book-cards", "索引重建失败");
-  } finally {
     setButtonLoading(button, false, "构建中...");
+    setWorkspaceStatus("索引重建失败", "error");
   }
 }
 
 async function refreshWorkspace() {
   const button = $("#reload-dashboard-btn");
+  if (button && button.disabled) return;
   setButtonLoading(button, true, "同步中...");
   setWorkspaceStatus("正在同步看板", "busy");
 
   try {
-    await loadBooks();
-    await loadReader(currentChapter);
-    await loadDashboard();
-    await loadGraph();
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error("同步超时")), 30000);
+    });
+
+    const refreshAction = async () => {
+      await loadBooks();
+      await loadReader(currentChapter);
+      await loadDashboard();
+      await loadGraph();
+    };
+
+    await Promise.race([refreshAction(), timeoutPromise]);
+
     setWorkspaceStatus("看板已同步", "ready");
   } catch (error) {
     handleActionError(error, "#metric-grid", "看板同步失败");
@@ -641,7 +708,7 @@ async function loadGraph() {
   const query = new URLSearchParams({
     chapter_start: String(scope.start),
     chapter_end: String(scope.end),
-    limit: "20",
+    density: currentGraphDensity(),
   });
 
   if (center) {
@@ -825,6 +892,16 @@ function truncateLabel(label, maxLength = 12) {
   return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
 }
 
+function shouldDrawGraphLabel(node, index) {
+  const total = graphState.nodes.length;
+  if (total <= 35) return true;
+  if (graphState.selectedId === node.id || graphState.hoveredId === node.id) return true;
+  if (node.is_center) return true;
+  if (node.type === "character" && index < 18) return true;
+  if (node.type === "event" && index < 8) return true;
+  return false;
+}
+
 function drawGraph() {
   if (!graphState.ctx || !graphState.canvas) {
     return;
@@ -845,7 +922,7 @@ function drawGraph() {
     ctx.stroke();
   });
 
-  graphState.nodes.forEach((node) => {
+  graphState.nodes.forEach((node, index) => {
     const isSelected = graphState.selectedId === node.id;
     const isHovered = graphState.hoveredId === node.id;
 
@@ -864,12 +941,14 @@ function drawGraph() {
     ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
     ctx.stroke();
 
-    ctx.font = node.type === "event"
-      ? '600 12px "Noto Sans SC", sans-serif'
-      : '600 13px "Noto Sans SC", sans-serif';
-    ctx.fillStyle = "rgba(243, 244, 239, 0.92)";
-    ctx.textAlign = "center";
-    ctx.fillText(truncateLabel(node.label), node.x, node.y + node.radius + 16);
+    if (shouldDrawGraphLabel(node, index)) {
+      ctx.font = node.type === "event"
+        ? '600 12px "Noto Sans SC", sans-serif'
+        : '600 13px "Noto Sans SC", sans-serif';
+      ctx.fillStyle = "rgba(243, 244, 239, 0.92)";
+      ctx.textAlign = "center";
+      ctx.fillText(truncateLabel(node.label), node.x, node.y + node.radius + 16);
+    }
   });
 }
 
@@ -960,7 +1039,7 @@ function updateGraphDetail(node, stats = null) {
     : (node.participants || []);
 
   const statsLine = stats
-    ? `<div class="graph-meta">节点 ${escapeHtml((stats.character_count || 0) + (stats.event_count || 0))} · 边 ${escapeHtml(stats.edge_count || 0)}</div>`
+    ? `<div class="graph-meta">显示 ${escapeHtml(stats.character_count || 0)}/${escapeHtml(stats.candidate_character_count || stats.character_count || 0)} 人物 · ${escapeHtml(stats.event_count || 0)}/${escapeHtml(stats.candidate_event_count || stats.event_count || 0)} 事件 · 边 ${escapeHtml(stats.edge_count || 0)} · ${escapeHtml(stats.density || "auto")}</div>`
     : "";
 
   detail.innerHTML = `
@@ -1008,6 +1087,14 @@ function bindEvents() {
   $("#graph-center")?.addEventListener("change", () => {
     loadGraph().catch((error) => handleActionError(error, "#graph-detail", "图谱加载失败"));
   });
+  $("#graph-density")?.addEventListener("change", () => {
+    loadGraph().catch((error) => handleActionError(error, "#graph-detail", "图谱加载失败"));
+  });
+  $("#detail-graph-density")?.addEventListener("change", () => {
+    if (router.currentBookId) {
+      loadDetailGraph(router.currentBookId);
+    }
+  });
   $("#scope-start")?.addEventListener("change", syncGraphScopeToAsk);
   $("#scope-end")?.addEventListener("change", syncGraphScopeToAsk);
 
@@ -1025,6 +1112,14 @@ function bindEvents() {
       const btn = e.target;
       const bookId = btn.dataset.bookId;
       startBookIndex(bookId);
+    }
+  });
+
+  document.addEventListener("click", (e) => {
+    if (e.target.classList.contains("open-book-btn")) {
+      const btn = e.target;
+      const bookId = btn.dataset.bookId;
+      navigateTo(`#/book/${bookId}`);
     }
   });
 
@@ -1076,7 +1171,7 @@ async function startBookIndex(bookId) {
   }
   try {
     const result = await fetchJson(`/api/books/${encodeURIComponent(bookId)}/start-index`, { method: "POST" });
-    if (result.status === "indexing") {
+    if (result.status === "indexing" || result.status === "ready") {
       navigateTo(`#/book/${bookId}`);
     }
   } catch (error) {
@@ -1292,10 +1387,11 @@ async function loadDetailArtifacts(bookId, preferredName = null) {
 async function loadDetailGraph(bookId) {
   const scopeStart = parseInt($("#detail-graph-scope-start")?.value) || 1;
   const scopeEnd = parseInt($("#detail-graph-scope-end")?.value) || 14;
+  const density = currentDetailGraphDensity();
   const encodedId = encodeURIComponent(bookId);
 
   try {
-    const data = await fetchJson(`/api/books/${encodedId}/graph?chapter_start=${scopeStart}&chapter_end=${scopeEnd}`);
+    const data = await fetchJson(`/api/books/${encodedId}/graph?chapter_start=${scopeStart}&chapter_end=${scopeEnd}&density=${encodeURIComponent(density)}`);
     renderDetailForceGraph(data);
     const events = (data.nodes || []).filter(n => n.type === "event").map(e => ({ chapter: e.chapter, description: e.summary || "" }));
     renderCharacterCards(data.available_characters || [], data);
@@ -1385,6 +1481,16 @@ function renderDetailForceGraph(data) {
   detailGraphLoop();
 }
 
+function shouldDrawDetailGraphLabel(node, index) {
+  const total = detailGraphState.nodes.length;
+  if (total <= 35) return true;
+  if (detailGraphState.selectedId === node.id || detailGraphState.hoveredId === node.id) return true;
+  if (node.is_center) return true;
+  if (node.type === "character" && index < 18) return true;
+  if (node.type === "event" && index < 8) return true;
+  return false;
+}
+
 function detailGraphPointerPos(e) {
   const rect = detailGraphState.canvas.getBoundingClientRect();
   return { x: e.clientX - rect.left, y: e.clientY - rect.top };
@@ -1470,7 +1576,7 @@ function detailGraphDraw() {
     ctx.stroke();
   });
 
-  detailGraphState.nodes.forEach((node) => {
+  detailGraphState.nodes.forEach((node, index) => {
     const isSel = detailGraphState.selectedId === node.id;
     const isHov = detailGraphState.hoveredId === node.id;
 
@@ -1489,10 +1595,12 @@ function detailGraphDraw() {
     ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
     ctx.stroke();
 
-    ctx.font = node.type === "event" ? '600 11px "Noto Sans SC",sans-serif' : '600 12px "Noto Sans SC",sans-serif';
-    ctx.fillStyle = "rgba(243,244,239,0.92)";
-    ctx.textAlign = "center";
-    ctx.fillText(truncateLabel(node.label), node.x, node.y + node.radius + 14);
+    if (shouldDrawDetailGraphLabel(node, index)) {
+      ctx.font = node.type === "event" ? '600 11px "Noto Sans SC",sans-serif' : '600 12px "Noto Sans SC",sans-serif';
+      ctx.fillStyle = "rgba(243,244,239,0.92)";
+      ctx.textAlign = "center";
+      ctx.fillText(truncateLabel(node.label), node.x, node.y + node.radius + 14);
+    }
   });
 }
 

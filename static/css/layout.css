@@ -1,0 +1,342 @@
+/*
+ * 布局样式 — App Shell、Tab Bar、面板
+ */
+
+.app-shell {
+  max-width: 1480px;
+  margin: 0 auto;
+  padding: 24px;
+  display: grid;
+  gap: 16px;
+}
+
+main {
+  display: grid;
+  gap: 16px;
+}
+
+/* ── Workspace Header ── */
+.workspace-header {
+  display: grid;
+  gap: 18px;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.workspace-copy,
+.hero-strip,
+.workflow-ribbon {
+  position: relative;
+  z-index: 1;
+}
+
+.eyebrow,
+.panel-kicker,
+.workflow-title {
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+}
+
+.eyebrow {
+  margin-bottom: 12px;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+
+.workspace-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.workspace-title-block {
+  max-width: 860px;
+}
+
+.hero-copy,
+.section-head p,
+.book-meta,
+.answer-meta,
+.metric-note,
+.panel-note,
+.field-note {
+  color: var(--muted);
+}
+
+.hero-copy {
+  margin-top: 14px;
+  max-width: 720px;
+  line-height: 1.7;
+  font-size: 14px;
+}
+
+.hero-actions {
+  display: grid;
+  gap: 12px;
+  min-width: 188px;
+  max-width: 220px;
+}
+
+/* ── Hero Strip ── */
+.hero-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.hero-stat {
+  min-height: 86px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  background: var(--bg-elevated);
+}
+
+.hero-label {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.hero-stat strong {
+  font-size: 16px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+#workspace-status[data-tone="ready"] {
+  color: var(--accent);
+}
+
+#workspace-status[data-tone="busy"] {
+  color: var(--accent-warm);
+}
+
+#workspace-status[data-tone="warn"] {
+  color: #dc2626;
+}
+
+#workspace-status[data-tone="idle"] {
+  color: var(--muted);
+}
+
+/* ── Workflow Ribbon ── */
+.workflow-ribbon {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+}
+
+.workflow-title {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.workflow-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.workflow-steps span {
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  background: var(--bg-elevated);
+  color: var(--muted);
+}
+
+/* ── Tab Bar ── */
+.tab-bar {
+  position: sticky;
+  top: 12px;
+  z-index: 8;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  backdrop-filter: blur(16px);
+  background: rgba(255, 255, 255, 0.85);
+}
+
+.tab {
+  min-width: 0;
+  text-align: left;
+  display: grid;
+  gap: 4px;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  cursor: pointer;
+  transition:
+    background-color 0.18s var(--ease-out),
+    border-color 0.18s var(--ease-out),
+    color 0.18s var(--ease-out);
+}
+
+.tab-label {
+  font-size: 15px;
+  font-weight: 600;
+  color: inherit;
+}
+
+.tab-copy {
+  font-size: 12px;
+  color: var(--subtle);
+}
+
+.tab.active {
+  background: var(--accent-light);
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.tab.active .tab-copy {
+  color: var(--accent);
+}
+
+.tab:hover:not(.active) {
+  background: var(--surface);
+  border-color: var(--line);
+}
+
+/* ── Tab Panels ── */
+.tab-panel {
+  display: none;
+}
+
+.tab-panel.active {
+  display: block;
+  animation: panel-in 0.26s var(--ease-out);
+}
+
+/* ── Panels ── */
+.panel {
+  position: relative;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.section-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.section-head p {
+  max-width: 720px;
+  line-height: 1.6;
+  font-size: 14px;
+}
+
+.panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.panel-kicker {
+  margin-bottom: 4px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+/* ── 响应式 ── */
+@media (max-width: 1280px) {
+  .workspace-title-row {
+    flex-direction: column;
+  }
+
+  .hero-actions {
+    min-width: 0;
+    max-width: none;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .hero-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1100px) {
+  .tab-bar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .app-shell {
+    padding: 14px;
+  }
+
+  .workspace-header,
+  .panel {
+    padding: 16px;
+  }
+
+  h1 {
+    font-size: 24px;
+  }
+
+  h2 {
+    font-size: 20px;
+  }
+
+  .hero-actions,
+  .hero-strip,
+  .tab-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .section-head,
+  .panel-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 520px) {
+  .tab-bar {
+    grid-template-columns: 1fr;
+  }
+}
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

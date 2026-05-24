@@ -1,3 +1,36 @@
 # Ralph Progress Log
-Started: Fri May 22 01:51:06     2026
+Started: Sat May 24 2026
 ---
+
+## Iteration 1 — All 14 stories completed
+
+### CSS Modules (US-001 to US-006)
+- US-001: Created static/css/variables.css — 24+ design tokens (Linear/Stripe style: --bg: #f8fafc, --accent: #2563eb)
+- US-002: Created static/css/base.css — light color scheme, Inter font, 6px scrollbar, box-sizing reset
+- US-003: Created static/css/layout.css — 1480px shell, sticky tab bar with backdrop-filter, responsive breakpoints
+- US-004: Created static/css/components.css — primary/secondary buttons, inputs, status tags, feedback cards
+- US-005: Created static/css/features.css — book cards, reader 3-col, graph grid bg, continuation/eval 2-col
+- US-006: Replaced styles.css with 5 @import lines
+
+### JS Modules (US-007 to US-013)
+- US-007: Created static/js/api.js — request() with AbortController timeout, 15 named API exports
+- US-008: Created static/js/library.js — initLibrary, loadBooks, delete, import, index polling
+- US-009: Created static/js/reader.js — initReader, chapter navigation, evidence Q&A
+- US-010: Created static/js/graph.js — initGraph, force-directed Canvas layout, drag/click interaction
+- US-011: Created static/js/continuation.js — initContinuation, generate API binding
+- US-012: Created static/js/evaluation.js — initEvaluation, dashboard metrics/baseline/failures
+- US-013: Created static/js/main.js — appState, hash router, tab switching, bootstrap, detail view
+
+### HTML & Verification (US-013, US-014)
+- Updated dashboard.html: script src changed to type="module" src="/static/js/main.js"
+- 342 tests passed (294.84s)
+- All CSS/JS files served correctly (200 status)
+- Server starts without errors
+
+### Files Created
+- static/css/variables.css, base.css, layout.css, components.css, features.css
+- static/js/api.js, utils.js, library.js, reader.js, graph.js, continuation.js, evaluation.js, main.js
+
+### Files Modified
+- static/styles.css (now 5 @import lines)
+- templates/dashboard.html (script tag updated)

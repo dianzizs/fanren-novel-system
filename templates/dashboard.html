@@ -250,6 +250,14 @@
                 <option value="">自动选择</option>
               </select>
             </div>
+            <div class="graph-control">
+              <label for="graph-density">图谱密度</label>
+              <select id="graph-density">
+                <option value="auto" selected>自动</option>
+                <option value="compact">紧凑</option>
+                <option value="expanded">展开</option>
+              </select>
+            </div>
             <button id="refresh-graph-btn" class="secondary">刷新图谱</button>
           </div>
 
@@ -381,6 +389,14 @@
             <input id="detail-graph-scope-end" type="number" value="14" min="1" />
           </div>
         </div>
+        <div class="graph-control">
+          <label for="detail-graph-density">图谱密度</label>
+          <select id="detail-graph-density">
+            <option value="auto" selected>自动</option>
+            <option value="compact">紧凑</option>
+            <option value="expanded">展开</option>
+          </select>
+        </div>
         <button id="detail-refresh-graph" class="secondary">刷新图谱</button>
       </div>
       <div class="graph-stage">
@@ -408,6 +424,6 @@
   </section>
 </div>
 
-  <script src="/static/app.js"></script>
+  <script type="module" src="/static/js/main.js?v=2"></script>
 </body>
 </html>

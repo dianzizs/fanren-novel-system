@@ -238,11 +238,6 @@ class ContinuationResponse(BaseModel):
         default="medium",
         description="答案置信度"
     )
-    uncertainty: Optional[Literal["low", "medium", "high"]] = Field(
-        default=None,
-        deprecated=True,
-        description="已弃用，请使用 confidence 字段"
-    )
     scope: Scope
     validation: dict[str, Any] = Field(default_factory=dict)
     trace: Optional[ContinuationTrace] = None  # 可选追踪数据

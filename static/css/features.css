@@ -1,0 +1,494 @@
+/*
+ * 功能区样式 — 藏书、阅读台、图谱、续写台、评测
+ */
+
+/* ══════════════════════════════════════════════
+   藏书页
+   ══════════════════════════════════════════════ */
+
+.library-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.library-actions-left {
+  display: flex;
+  gap: 10px;
+}
+
+.storage-stats {
+  display: flex;
+  gap: 16px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.storage-stats span {
+  padding: 6px 12px;
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+}
+
+.book-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.book-card {
+  display: grid;
+  gap: 10px;
+  position: relative;
+  transition:
+    transform 0.18s var(--ease-out),
+    border-color 0.18s var(--ease-out),
+    box-shadow 0.18s var(--ease-out);
+}
+
+.book-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent);
+  box-shadow: 0 4px 16px rgba(37, 99, 235, 0.1);
+}
+
+.book-card.active {
+  border-color: var(--accent);
+  background: var(--accent-light);
+}
+
+.book-card-actions {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.book-card:hover .book-card-actions {
+  opacity: 1;
+}
+
+.delete-book-btn {
+  padding: 6px 10px;
+  background: #fee2e2;
+  border: 1px solid #fca5a5;
+  color: #dc2626;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.delete-book-btn:hover {
+  background: #fecaca;
+}
+
+.status-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── 详情页 ── */
+.book-detail-view {
+  display: grid;
+  gap: 16px;
+}
+
+.detail-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+}
+
+.detail-header h2 {
+  flex: 1;
+}
+
+.detail-progress {
+  padding: 20px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+}
+
+.detail-content {
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr) 280px;
+  gap: 16px;
+}
+
+.detail-artifacts {
+  display: grid;
+  gap: 14px;
+  padding: 16px 20px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+}
+
+.detail-artifacts-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.detail-artifact-meta {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.detail-artifact-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.detail-artifact-controls select {
+  min-width: 220px;
+}
+
+.detail-artifact-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.detail-artifact-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.detail-artifact-chip.active {
+  color: var(--accent-strong);
+  border-color: var(--accent);
+  background: var(--accent-light);
+}
+
+.detail-artifact-viewer {
+  min-height: 240px;
+  max-height: 420px;
+  margin: 0;
+  padding: 14px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.detail-sidebar,
+.detail-sidebar-right {
+  padding: 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  max-height: 600px;
+  overflow: auto;
+}
+
+.detail-main {
+  display: grid;
+  gap: 16px;
+}
+
+/* ══════════════════════════════════════════════
+   阅读台
+   ══════════════════════════════════════════════ */
+
+.reader-layout {
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr) 340px;
+  gap: 16px;
+}
+
+.reader-sidebar,
+.reader-pane,
+.ask-panel {
+  min-height: 640px;
+  padding: 16px;
+}
+
+.reader-pane {
+  display: grid;
+  gap: 14px;
+}
+
+.chapter-tree,
+.evidence-list,
+.character-list,
+.timeline-board,
+.baseline-list,
+.failure-list {
+  display: grid;
+  gap: 12px;
+}
+
+.chapter-tree {
+  max-height: 540px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.chapter-item {
+  padding: 12px;
+  border: 1px solid transparent;
+  border-left: 3px solid transparent;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  cursor: pointer;
+  transition:
+    border-color 0.15s var(--ease-out),
+    background-color 0.15s var(--ease-out);
+}
+
+.chapter-item:hover {
+  border-color: var(--line);
+  border-left-color: var(--accent);
+  background: var(--surface);
+}
+
+.chapter-item.active {
+  border-color: var(--accent);
+  border-left-color: var(--accent);
+  background: var(--accent-light);
+}
+
+.chapter-item strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 14px;
+}
+
+.summary-card {
+  display: grid;
+  gap: 10px;
+  border-left: 3px solid var(--accent);
+}
+
+.reader-content,
+.continuation-result,
+.chart-json {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+}
+
+.reader-content {
+  max-height: 520px;
+  overflow: auto;
+  white-space: pre-wrap;
+  line-height: 1.85;
+  font-family: var(--font-serif);
+  font-size: 17px;
+}
+
+.answer-card {
+  margin-top: 16px;
+  display: grid;
+  gap: 10px;
+  border-left: 3px solid var(--accent);
+}
+
+/* ══════════════════════════════════════════════
+   知识图谱
+   ══════════════════════════════════════════════ */
+
+.knowledge-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.graph-workspace {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.graph-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 14px;
+}
+
+.graph-control {
+  min-width: 220px;
+  display: grid;
+  gap: 8px;
+}
+
+.graph-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(280px, 0.9fr);
+  gap: 16px;
+}
+
+.graph-stage,
+.graph-detail {
+  padding: 16px;
+}
+
+.graph-stage {
+  position: relative;
+  overflow: hidden;
+  min-height: 540px;
+  background:
+    repeating-linear-gradient(0deg, transparent 0 39px, var(--line) 39px 40px),
+    repeating-linear-gradient(90deg, transparent 0 39px, var(--line) 39px 40px);
+  background-size: 40px 40px;
+  opacity: 1;
+}
+
+#knowledge-graph-canvas,
+#detail-knowledge-graph-canvas {
+  position: relative;
+  width: 100%;
+  height: 500px;
+  display: block;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+}
+
+.graph-detail {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.graph-detail p {
+  line-height: 1.7;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.graph-meta {
+  font-size: 13px;
+  color: var(--accent);
+}
+
+.graph-chip {
+  border: 1px solid rgba(37, 99, 235, 0.2);
+  background: var(--accent-light);
+  color: var(--accent-strong);
+}
+
+.graph-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ══════════════════════════════════════════════
+   续写台
+   ══════════════════════════════════════════════ */
+
+.continuation-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.continuation-result {
+  min-height: 360px;
+  white-space: pre-wrap;
+  line-height: 1.9;
+  font-size: 15px;
+}
+
+/* ══════════════════════════════════════════════
+   评测
+   ══════════════════════════════════════════════ */
+
+.evaluation-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.metric-card {
+  display: grid;
+  gap: 6px;
+}
+
+.metric-value {
+  font-family: var(--font-mono);
+  font-size: 32px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.chart-json {
+  max-height: 280px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+/* ══════════════════════════════════════════════
+   响应式
+   ══════════════════════════════════════════════ */
+
+@media (max-width: 1100px) {
+  .reader-layout,
+  .graph-grid,
+  .knowledge-grid,
+  .continuation-grid,
+  .evaluation-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .reader-sidebar,
+  .reader-pane,
+  .ask-panel {
+    min-height: 0;
+  }
+
+  .graph-stage {
+    min-height: 440px;
+  }
+
+  #knowledge-graph-canvas {
+    height: 400px;
+  }
+
+  .detail-content {
+    grid-template-columns: 1fr;
+  }
+}

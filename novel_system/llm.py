@@ -12,7 +12,9 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
+import threading
 import time
 from typing import Any, Optional
 
@@ -24,6 +26,24 @@ logger = logging.getLogger(__name__)
 
 
 THINK_TAG_RE = re.compile(r"<think>.*?</think>\s*", re.DOTALL | re.IGNORECASE)
+
+_last_request_time_lock = threading.Lock()
+_last_request_time = 0.0
+
+
+def _throttle() -> None:
+    """全局 API 请求限频器，避免触发 429 频控"""
+    global _last_request_time
+    min_interval = float(os.getenv("LLM_MIN_REQUEST_INTERVAL", "0.5"))
+    if min_interval <= 0:
+        return
+    with _last_request_time_lock:
+        now = time.time()
+        elapsed = now - _last_request_time
+        if elapsed < min_interval:
+            time.sleep(min_interval - elapsed)
+        _last_request_time = time.time()
+
 
 
 class LLMResponse:
@@ -42,8 +62,8 @@ class MiniMaxDirectClient:
     """
 
     # 重试配置
-    MAX_RETRIES = 3
-    RETRY_DELAYS = [1, 2, 4]  # 指数退避：1s, 2s, 4s
+    MAX_RETRIES = 5
+    RETRY_DELAYS = [2, 4, 8, 16, 32]  # 指数退避：2s, 4s, 8s, 16s, 32s
 
     def __init__(self, config: AppConfig) -> None:
         self.api_key = config.minimax_api_key
@@ -79,6 +99,7 @@ class MiniMaxDirectClient:
 
         for attempt in range(self.MAX_RETRIES + 1):
             try:
+                _throttle()
                 response = requests.post(
                     f"{self.base_url}/chat/completions",
                     headers={
@@ -133,8 +154,8 @@ class MimoClient:
     支持带重试的对话调用，自动提取 system 消息，并规范化 token 用量字段。
     """
 
-    MAX_RETRIES = 3
-    RETRY_DELAYS = [1, 2, 4]  # 指数退避：1s, 2s, 4s
+    MAX_RETRIES = 5
+    RETRY_DELAYS = [2, 4, 8, 16, 32]  # 指数退避：2s, 4s, 8s, 16s, 32s
 
     def __init__(self, config: AppConfig) -> None:
         self.api_key = config.mimo_api_key
@@ -196,6 +217,7 @@ class MimoClient:
 
         for attempt in range(self.MAX_RETRIES + 1):
             try:
+                _throttle()
                 response = requests.post(
                     f"{self.base_url}/v1/messages",
                     headers=headers,
