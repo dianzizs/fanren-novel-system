@@ -2,129 +2,38 @@
 from novel_system.indexing import BookIndexRepository
 
 
-def test_score_event_sentence_action_verbs():
+def test_score_event_sentence_action_verbs(test_repo):
     """Sentences with action verbs should score higher."""
-    # Need to instantiate to access the method
-    from novel_system.config import AppConfig
-    import tempfile
-    from pathlib import Path
+    # Sentence with action verb
+    action_sentence = "韩立终于发现了小绿瓶的秘密。"
+    normal_sentence = "韩立觉得这个地方很不错。"
 
-    with tempfile.TemporaryDirectory() as tmp:
-        config = AppConfig(
-            root_dir=Path(tmp),
-            data_dir=Path(tmp) / "data",
-            runtime_dir=Path(tmp) / "data" / "runtime",
-            books_dir=Path(tmp) / "data" / "books",
-            default_book_id="test",
-            default_book_title="Test",
-            default_book_path=Path(tmp) / "test.txt",
-            minimax_api_key="",
-            minimax_base_url="https://api.minimax.chat/v1",
-            minimax_chat_model="MiniMax-m2.7-HighSpeed",
-            embedding_provider="local_openvino",
-            local_embedding_model="BAAI/bge-small-zh-v1.5",
-            local_embedding_device="CPU",
-            local_embedding_fallback_device="CPU",
-            local_embedding_batch_size=32,
-            local_embedding_normalize=True,
-            local_embedding_cache_dir=Path(tmp) / "cache",
-            vector_store_dir=Path(tmp) / "data" / "vectors",
-            trace_enabled=False,
-            trace_log_level="INFO",
-            dense_search_overfetch_factor=10,
-        )
-        repo = BookIndexRepository(config)
+    action_score = test_repo._score_event_sentence(action_sentence)
+    normal_score = test_repo._score_event_sentence(normal_sentence)
 
-        # Sentence with action verb
-        action_sentence = "韩立终于发现了小绿瓶的秘密。"
-        normal_sentence = "韩立觉得这个地方很不错。"
-
-        action_score = repo._score_event_sentence(action_sentence)
-        normal_score = repo._score_event_sentence(normal_sentence)
-
-        assert action_score > normal_score, "Action sentence should score higher"
+    assert action_score > normal_score, "Action sentence should score higher"
 
 
-def test_score_event_sentence_time_words():
+def test_score_event_sentence_time_words(test_repo):
     """Sentences with time words should score higher."""
-    from novel_system.config import AppConfig
-    import tempfile
-    from pathlib import Path
+    time_sentence = "几天后，韩立决定离开七玄门。"
+    static_sentence = "韩立住在七玄门。"
 
-    with tempfile.TemporaryDirectory() as tmp:
-        config = AppConfig(
-            root_dir=Path(tmp),
-            data_dir=Path(tmp) / "data",
-            runtime_dir=Path(tmp) / "data" / "runtime",
-            books_dir=Path(tmp) / "data" / "books",
-            default_book_id="test",
-            default_book_title="Test",
-            default_book_path=Path(tmp) / "test.txt",
-            minimax_api_key="",
-            minimax_base_url="https://api.minimax.chat/v1",
-            minimax_chat_model="MiniMax-m2.7-HighSpeed",
-            embedding_provider="local_openvino",
-            local_embedding_model="BAAI/bge-small-zh-v1.5",
-            local_embedding_device="CPU",
-            local_embedding_fallback_device="CPU",
-            local_embedding_batch_size=32,
-            local_embedding_normalize=True,
-            local_embedding_cache_dir=Path(tmp) / "cache",
-            vector_store_dir=Path(tmp) / "data" / "vectors",
-            trace_enabled=False,
-            trace_log_level="INFO",
-            dense_search_overfetch_factor=10,
-        )
-        repo = BookIndexRepository(config)
+    time_score = test_repo._score_event_sentence(time_sentence)
+    static_score = test_repo._score_event_sentence(static_sentence)
 
-        time_sentence = "几天后，韩立决定离开七玄门。"
-        static_sentence = "韩立住在七玄门。"
-
-        time_score = repo._score_event_sentence(time_sentence)
-        static_score = repo._score_event_sentence(static_sentence)
-
-        assert time_score > static_score, "Sentence with time word should score higher"
+    assert time_score > static_score, "Sentence with time word should score higher"
 
 
-def test_score_event_sentence_causality():
+def test_score_event_sentence_causality(test_repo):
     """Sentences with causality words should score higher."""
-    from novel_system.config import AppConfig
-    import tempfile
-    from pathlib import Path
+    causal_sentence = "因为小绿瓶的秘密被发现，韩立不得不逃离。"
+    plain_sentence = "韩立有一个小绿瓶。"
 
-    with tempfile.TemporaryDirectory() as tmp:
-        config = AppConfig(
-            root_dir=Path(tmp),
-            data_dir=Path(tmp) / "data",
-            runtime_dir=Path(tmp) / "data" / "runtime",
-            books_dir=Path(tmp) / "data" / "books",
-            default_book_id="test",
-            default_book_title="Test",
-            default_book_path=Path(tmp) / "test.txt",
-            minimax_api_key="",
-            minimax_base_url="https://api.minimax.chat/v1",
-            minimax_chat_model="MiniMax-m2.7-HighSpeed",
-            embedding_provider="local_openvino",
-            local_embedding_model="BAAI/bge-small-zh-v1.5",
-            local_embedding_device="CPU",
-            local_embedding_fallback_device="CPU",
-            local_embedding_batch_size=32,
-            local_embedding_normalize=True,
-            local_embedding_cache_dir=Path(tmp) / "cache",
-            vector_store_dir=Path(tmp) / "data" / "vectors",
-            trace_enabled=False,
-            trace_log_level="INFO",
-            dense_search_overfetch_factor=10,
-        )
-        repo = BookIndexRepository(config)
+    causal_score = test_repo._score_event_sentence(causal_sentence)
+    plain_score = test_repo._score_event_sentence(plain_sentence)
 
-        causal_sentence = "因为小绿瓶的秘密被发现，韩立不得不逃离。"
-        plain_sentence = "韩立有一个小绿瓶。"
-
-        causal_score = repo._score_event_sentence(causal_sentence)
-        plain_score = repo._score_event_sentence(plain_sentence)
-
-        assert causal_score > plain_score, "Causal sentence should score higher"
+    assert causal_score > plain_score, "Causal sentence should score higher"
 
 
 def test_build_event_timeline_prioritizes_event_sentences():

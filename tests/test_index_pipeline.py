@@ -5,33 +5,9 @@ from novel_system.config import AppConfig
 from novel_system.indexing import BookIndexRepository
 
 
-def test_repository_reads_new_artifact_names(tmp_path: Path):
-    data_dir = tmp_path / "data"
-    config = AppConfig(
-        root_dir=tmp_path,
-        data_dir=data_dir,
-        runtime_dir=data_dir / "runtime",
-        books_dir=data_dir / "books",
-        default_book_id="default-book",
-        default_book_title="Default",
-        default_book_path=tmp_path / "default.txt",
-        minimax_api_key="",
-        minimax_base_url="https://api.minimax.chat/v1",
-        minimax_chat_model="MiniMax-m2.7-HighSpeed",
-        embedding_provider="local_openvino",
-        local_embedding_model="BAAI/bge-small-zh-v1.5",
-        local_embedding_device="CPU",
-        local_embedding_fallback_device="CPU",
-        local_embedding_batch_size=32,
-        local_embedding_normalize=True,
-        local_embedding_cache_dir=tmp_path / "cache",
-        vector_store_dir=data_dir / "vectors",
-        trace_enabled=False,
-        trace_log_level="INFO",
-        dense_search_overfetch_factor=10,
-    )
-    config.books_dir.mkdir(parents=True, exist_ok=True)
-    book_dir = config.books_dir / "book-a"
+def test_repository_reads_new_artifact_names(test_config: AppConfig):
+    test_config.books_dir.mkdir(parents=True, exist_ok=True)
+    book_dir = test_config.books_dir / "book-a"
     book_dir.mkdir(parents=True, exist_ok=True)
     (book_dir / "manifest.json").write_text(
         '{"id":"book-a","title":"A","artifact_version":"v2","available_artifacts":["scene_segments","character_registry"]}',
@@ -40,7 +16,7 @@ def test_repository_reads_new_artifact_names(tmp_path: Path):
     (book_dir / "scene_segments.json").write_text("[]", encoding="utf-8")
     (book_dir / "character_registry.json").write_text("[]", encoding="utf-8")
 
-    repo = BookIndexRepository(config)
+    repo = BookIndexRepository(test_config)
 
     assert repo.read_artifact("book-a", "scene_segments") == []
     assert repo.read_artifact("book-a", "character_registry") == []

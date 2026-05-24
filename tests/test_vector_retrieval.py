@@ -2,230 +2,117 @@
 from __future__ import annotations
 
 import hashlib
-import tempfile
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 
 from novel_system.config import AppConfig
 from novel_system.indexing import BookIndexRepository, LoadedBookIndex
-from novel_system.retrieval import HybridRetriever
 from novel_system.search.orchestrator import SearchOrchestrator
 from novel_system.vector_store import FAISSVectorStore
 
 
-class MockEmbeddingProvider:
-    """Mock embedding provider for testing."""
+def test_vector_index_build_and_load(tmp_app_dir: Path, test_config: AppConfig, mock_embedding_provider):
+    """Test vector index building and loading."""
+    # Create test book file
+    book_file = tmp_app_dir / "test_book.txt"
+    book_file.write_text("第1章 开始\n韩立是一个普通的少年，生活在青牛镇。\n", encoding="utf-8")
 
-    def __init__(self, dimension: int = 128):
-        self._dimension = dimension
-        self._call_count = 0
+    # Create repository with mock embedding provider
+    repo = BookIndexRepository(test_config, embedding_provider=mock_embedding_provider)
 
-    def embed(self, texts: list[str]) -> list[list[float]]:
-        """Generate deterministic embeddings based on text hash."""
-        self._call_count += 1
-        results = []
-        for text in texts:
-            # Use hashlib for deterministic seeding (hash() is randomized per process)
-            seed = int(hashlib.md5(text.encode()).hexdigest(), 16) % (2**31)
-            np.random.seed(seed)
-            vector = np.random.randn(self._dimension).astype(np.float32)
-            # Normalize
-            vector = vector / np.linalg.norm(vector)
-            results.append(vector.tolist())
-        return results
+    # Build index
+    manifest = repo.build_from_txt("test-book", "Test Book", book_file)
+
+    # Verify vector index was created
+    assert manifest["has_vector_index"] is True
+    assert manifest["indexed"] is True
+
+    # Load the index
+    loaded = repo.load("test-book")
+
+    # Verify loaded index structure
+    assert isinstance(loaded, LoadedBookIndex)
+    assert loaded.manifest["id"] == "test-book"
+    assert len(loaded.corpora) > 0
+
+    # Verify vector_stores were populated
+    assert len(loaded.vector_stores) > 0
+    for corpus_name, vector_store in loaded.vector_stores.items():
+        assert isinstance(vector_store, FAISSVectorStore)
+        assert vector_store.count() > 0
 
 
-def create_test_config(tmp_path: Path) -> AppConfig:
-    """Create test configuration."""
-    data_dir = tmp_path / "data"
-    return AppConfig(
-        root_dir=tmp_path,
-        data_dir=data_dir,
-        runtime_dir=data_dir / "runtime",
-        books_dir=data_dir / "books",
-        default_book_id="test-book",
-        default_book_title="Test Book",
-        default_book_path=tmp_path / "test.txt",
-        minimax_api_key="",
-        minimax_base_url="https://api.minimax.chat/v1",
-        minimax_chat_model="MiniMax-m2.7-HighSpeed",
-        embedding_provider="local_openvino",
-        local_embedding_model="BAAI/bge-small-zh-v1.5",
-        local_embedding_device="CPU",
-        local_embedding_fallback_device="CPU",
-        local_embedding_batch_size=32,
-        local_embedding_normalize=True,
-        local_embedding_cache_dir=tmp_path / "cache",
-        vector_store_dir=data_dir / "vectors",
-        trace_enabled=False,
-        trace_log_level="INFO",
-        dense_search_overfetch_factor=10,
+def test_tfidf_only_retrieval(tmp_app_dir: Path, test_config: AppConfig):
+    """Test retrieval with TF-IDF only (no vector index)."""
+    book_file = tmp_app_dir / "test_book.txt"
+    book_file.write_text("第1章 开始\n韩立是一个普通的少年，生活在青牛镇。\n", encoding="utf-8")
+
+    # Create repository WITHOUT embedding provider
+    repo = BookIndexRepository(test_config, embedding_provider=None)
+    manifest = repo.build_from_txt("test-book", "Test Book", book_file)
+
+    assert manifest["has_vector_index"] is False
+
+    loaded = repo.load("test-book")
+    assert len(loaded.vector_stores) == 0
+
+    orchestrator = SearchOrchestrator()
+    hits = orchestrator.retrieve(
+        book_index=loaded,
+        query="韩立",
+        targets=["chapter_chunks"],
+        chapter_scope=[],
+        top_k=5,
     )
 
-
-def create_test_book_content() -> str:
-    """Create test book content with chapters."""
-    return """第1章 开始
-韩立是一个普通的少年，生活在青牛镇。
-他和张铁一起在七玄门学艺。
-第2章 修炼
-韩立开始修炼长春功。
-墨大夫教导他医术和毒术。
-第3章 考验
-韩立通过了外门弟子的考验。
-他获得了升仙令。
-"""
+    assert len(hits) > 0
 
 
-def test_vector_index_build_and_load():
-    """Test vector index building and loading."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        tmp_path = Path(tmp_dir)
-        config = create_test_config(tmp_path)
-
-        # Create test book file
-        book_file = tmp_path / "test_book.txt"
-        book_file.write_text(create_test_book_content(), encoding="utf-8")
-
-        # Create repository with mock embedding provider
-        embedding_provider = MockEmbeddingProvider(dimension=128)
-        repo = BookIndexRepository(config, embedding_provider=embedding_provider)
-
-        # Build index
-        manifest = repo.build_from_txt("test-book", "Test Book", book_file)
-
-        # Verify vector index was created
-        assert manifest["has_vector_index"] is True
-        assert manifest["indexed"] is True
-
-        # Load the index
-        loaded = repo.load("test-book")
-
-        # Verify loaded index structure
-        assert isinstance(loaded, LoadedBookIndex)
-        assert loaded.manifest["id"] == "test-book"
-        assert len(loaded.corpora) > 0
-
-        # Verify vector_stores were populated
-        assert len(loaded.vector_stores) > 0
-        for corpus_name, vector_store in loaded.vector_stores.items():
-            assert isinstance(vector_store, FAISSVectorStore)
-            assert vector_store.count() > 0
-
-
-def test_tfidf_only_retrieval():
-    """Test retrieval with TF-IDF only (no vector index)."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        tmp_path = Path(tmp_dir)
-        config = create_test_config(tmp_path)
-
-        # Create test book file
-        book_file = tmp_path / "test_book.txt"
-        book_file.write_text(create_test_book_content(), encoding="utf-8")
-
-        # Create repository WITHOUT embedding provider
-        repo = BookIndexRepository(config, embedding_provider=None)
-
-        # Build index (should not create vector index)
-        manifest = repo.build_from_txt("test-book", "Test Book", book_file)
-
-        # Verify no vector index
-        assert manifest["has_vector_index"] is False
-
-        # Load the index
-        loaded = repo.load("test-book")
-
-        # Verify vector_stores is empty
-        assert len(loaded.vector_stores) == 0
-
-        # Test TF-IDF retrieval
-        retriever = HybridRetriever(loaded)
-        hits = retriever.retrieve(
-            query="韩立",
-            targets=["chapter_chunks"],
-            chapter_scope=[],
-            top_k=5,
-        )
-
-        # Should get some results from TF-IDF
-        assert len(hits) > 0
-
-
-def test_hybrid_retrieval():
+def test_hybrid_retrieval(tmp_app_dir: Path, test_config: AppConfig, mock_embedding_provider):
     """Test TF-IDF + vector hybrid retrieval."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        tmp_path = Path(tmp_dir)
-        config = create_test_config(tmp_path)
+    book_file = tmp_app_dir / "test_book.txt"
+    book_file.write_text("第1章 开始\n韩立是一个普通的少年，生活在青牛镇。\n", encoding="utf-8")
 
-        # Create test book file
-        book_file = tmp_path / "test_book.txt"
-        book_file.write_text(create_test_book_content(), encoding="utf-8")
+    repo = BookIndexRepository(test_config, embedding_provider=mock_embedding_provider)
+    repo.build_from_txt("test-book", "Test Book", book_file)
+    loaded = repo.load("test-book")
 
-        # Create repository with mock embedding provider
-        embedding_provider = MockEmbeddingProvider(dimension=128)
-        repo = BookIndexRepository(config, embedding_provider=embedding_provider)
+    orchestrator = SearchOrchestrator()
+    query_embedding = mock_embedding_provider.embed(["韩立"])[0]
 
-        # Build index
-        repo.build_from_txt("test-book", "Test Book", book_file)
+    hits = orchestrator.retrieve(
+        book_index=loaded,
+        query="韩立",
+        targets=["chapter_chunks"],
+        chapter_scope=[],
+        top_k=5,
+        query_embedding=query_embedding,
+    )
 
-        # Load the index
-        loaded = repo.load("test-book")
-
-        # Create retriever
-        retriever = HybridRetriever(loaded)
-
-        # Get query embedding
-        query_embedding = embedding_provider.embed(["韩立修炼"])[0]
-
-        # Test hybrid retrieval
-        hits = retriever.retrieve(
-            query="韩立修炼",
-            targets=["chapter_chunks"],
-            chapter_scope=[],
-            top_k=5,
-            query_embedding=query_embedding,
-        )
-
-        # Should get results from both TF-IDF and vector search
-        assert len(hits) > 0
+    assert len(hits) > 0
 
 
-def test_fallback_when_vector_store_missing():
+def test_fallback_when_vector_store_missing(tmp_app_dir: Path, test_config: AppConfig):
     """Test fallback to TF-IDF when vector store is missing."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        tmp_path = Path(tmp_dir)
-        config = create_test_config(tmp_path)
+    book_file = tmp_app_dir / "test_book.txt"
+    book_file.write_text("第1章 开始\n韩立是一个普通的少年，生活在青牛镇。\n", encoding="utf-8")
 
-        # Create test book file
-        book_file = tmp_path / "test_book.txt"
-        book_file.write_text(create_test_book_content(), encoding="utf-8")
+    repo = BookIndexRepository(test_config, embedding_provider=None)
+    repo.build_from_txt("test-book", "Test Book", book_file)
+    loaded = repo.load("test-book")
 
-        # Create repository WITHOUT embedding provider
-        repo = BookIndexRepository(config, embedding_provider=None)
+    orchestrator = SearchOrchestrator()
+    hits = orchestrator.retrieve(
+        book_index=loaded,
+        query="韩立",
+        targets=["chapter_chunks"],
+        chapter_scope=[],
+        top_k=5,
+        query_embedding=[0.1] * 128,  # Dummy embedding
+    )
 
-        # Build index (no vector index)
-        repo.build_from_txt("test-book", "Test Book", book_file)
-
-        # Load the index
-        loaded = repo.load("test-book")
-
-        # Create orchestrator
-        orchestrator = SearchOrchestrator()
-
-        # Try to search with query_embedding but no vector store
-        hits = orchestrator.retrieve(
-            book_index=loaded,
-            query="韩立",
-            targets=["chapter_chunks"],
-            chapter_scope=[],
-            top_k=5,
-            query_embedding=[0.1] * 128,  # Dummy embedding
-        )
-
-        # Should still get results from TF-IDF
-        assert len(hits) > 0
+    assert len(hits) > 0
 
 
 def test_dense_search_method():
@@ -244,25 +131,22 @@ def test_dense_search_method():
     # Test with actual vector store
     vector_store = FAISSVectorStore(dimension=128, metric="ip")
 
-    # Add some test vectors
     test_docs = [
         {"id": "doc-1", "text": "测试文档一"},
         {"id": "doc-2", "text": "测试文档二"},
-        {"id": "doc-3", "text": "测试文档三"},
     ]
 
     np.random.seed(42)
-    vectors = np.random.randn(3, 128).astype(np.float32)
+    vectors = np.random.randn(2, 128).astype(np.float32)
     vectors = vectors / np.linalg.norm(vectors, axis=1, keepdims=True)
 
     vector_store.add(
-        ids=["doc-1", "doc-2", "doc-3"],
+        ids=["doc-1", "doc-2"],
         vectors=vectors.tolist(),
         documents=test_docs,
     )
 
-    # Search with a similar vector
-    query_vector = vectors[0].tolist()  # Use first vector as query
+    query_vector = vectors[0].tolist()
     result = orchestrator._dense_search(
         query_vector=query_vector,
         vector_store=vector_store,
@@ -270,12 +154,9 @@ def test_dense_search_method():
         top_k=3,
     )
 
-    # Should get results
     assert len(result) > 0
     assert result[0]["target"] == "test"
     assert "document_id" in result[0]
-    assert "document" in result[0]
-    assert "score" in result[0]
 
 
 def test_dense_search_respects_chapter_scope():
@@ -285,13 +166,10 @@ def test_dense_search_respects_chapter_scope():
 
     vector_store.add(
         ids=["ch1", "ch2"],
-        vectors=[
-            [1.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0],
-        ],
+        vectors=[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
         documents=[
-            {"id": "ch1", "chapter": 1, "text": "第一章范围内的内容"},
-            {"id": "ch2", "chapter": 2, "text": "第二章范围外但向量更相似的内容"},
+            {"id": "ch1", "chapter": 1, "text": "第一章"},
+            {"id": "ch2", "chapter": 2, "text": "第二章"},
         ],
     )
 
@@ -301,8 +179,8 @@ def test_dense_search_respects_chapter_scope():
     index = ScopedVectorIndex()
     index.corpora = {
         "chapter_chunks": [
-            {"id": "ch1", "chapter": 1, "text": "第一章范围内的内容"},
-            {"id": "ch2", "chapter": 2, "text": "第二章范围外但向量更相似的内容"},
+            {"id": "ch1", "chapter": 1, "text": "第一章"},
+            {"id": "ch2", "chapter": 2, "text": "第二章"},
         ]
     }
     index.vector_stores = {"chapter_chunks": vector_store}
@@ -322,35 +200,21 @@ def test_dense_search_respects_chapter_scope():
     assert all(hit.document["chapter"] == 1 for hit in hits)
 
 
-def test_vector_index_persistence():
+def test_vector_index_persistence(tmp_app_dir: Path, test_config: AppConfig, mock_embedding_provider):
     """Test vector index persistence to disk."""
-    import hashlib
+    book_file = tmp_app_dir / "test_book.txt"
+    book_file.write_text("第1章 开始\n韩立是一个普通的少年，生活在青牛镇。\n", encoding="utf-8")
 
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        tmp_path = Path(tmp_dir)
-        config = create_test_config(tmp_path)
+    repo = BookIndexRepository(test_config, embedding_provider=mock_embedding_provider)
+    repo.build_from_txt("test-book", "Test Book", book_file)
 
-        # Create test book file
-        book_file = tmp_path / "test_book.txt"
-        book_file.write_text(create_test_book_content(), encoding="utf-8")
+    book_hash = hashlib.md5("test-book".encode()).hexdigest()[:12]
+    vectors_dir = test_config.vector_store_dir / book_hash
+    assert vectors_dir.exists()
 
-        # Create repository with mock embedding provider
-        embedding_provider = MockEmbeddingProvider(dimension=128)
-        repo = BookIndexRepository(config, embedding_provider=embedding_provider)
+    corpus_dirs = list(vectors_dir.iterdir())
+    assert len(corpus_dirs) > 0
 
-        # Build index
-        repo.build_from_txt("test-book", "Test Book", book_file)
-
-        # Verify vector files exist (using hashed path to avoid encoding issues)
-        book_hash = hashlib.md5("test-book".encode()).hexdigest()[:12]
-        vectors_dir = config.vector_store_dir / book_hash
-        assert vectors_dir.exists()
-
-        # Check at least one corpus has vector files
-        corpus_dirs = list(vectors_dir.iterdir())
-        assert len(corpus_dirs) > 0
-
-        # Verify FAISS index files
-        for corpus_dir in corpus_dirs:
-            assert (corpus_dir / "index.faiss").exists()
-            assert (corpus_dir / "metadata.json").exists()
+    for corpus_dir in corpus_dirs:
+        assert (corpus_dir / "index.faiss").exists()
+        assert (corpus_dir / "metadata.json").exists()

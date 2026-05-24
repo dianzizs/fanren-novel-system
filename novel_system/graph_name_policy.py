@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .indexing import COMMON_SURNAMES
+from .indexing.constants import COMMON_SURNAMES
 
 logger = logging.getLogger(__name__)
 
