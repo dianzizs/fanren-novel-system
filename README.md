@@ -1,360 +1,133 @@
-# NovelQA System — GraphRAG 全书分析系统
+# NovelQA System — GraphRAG 长篇小说问答与分析系统
 
-基于 Microsoft GraphRAG v3 构建的中文长篇小说全书分析系统。支持实体抽取、关系图谱、社区发现、多模式检索。
+基于 Microsoft GraphRAG v3.0.9 构建的中文长篇小说全书分析系统。通过自动解析、实体与关系抽取、社区发现构建全书维度的多模式检索（Local / Global / DRIFT / Basic）和深度分析能力。
 
-> **GraphRAG Migration Notice**: 本项目已从旧混合检索架构（TF-IDF + FAISS + 规则匹配）迁移到 Microsoft GraphRAG v3 结构。
-> 旧 RAG 模块移至 `novel_system/legacy/` 作为参考，不在主链路使用。
+## 1. 项目简介
 
-## 功能特性
+- 这是一个面向长篇小说 / 全书内容的智能问答与深度分析系统。系统通过从全书文本中提取实体、关系和事件，帮助用户进行角色追踪、势力分析以及故事脉络整理。
+- 项目当前已全面迁移至以 **Microsoft GraphRAG** (v3.0.9) 为核心的知识图谱问答与分析架构，舍弃了旧有的混合检索。
+- 旧版的 RAG 混合检索链路（包括 TF-IDF、FAISS 向量检索、剧透判定等）已经被彻底物理清理，目前仅保留部分测试兼容配置，不再作为推荐的问答主路径。
 
-### 核心功能
-- **GraphRAG 索引**: documents → text_units → entities → relationships → communities → community_reports
-- **Local Search**: 人物、物品、功法、地点、关系类问题
-- **Global Search**: 主题、主线、势力格局、人物群像
-- **DRIFT Search**: 复杂因果、多跳推理、人物动机
-- **Basic Search**: 原文片段定位
-- **派生图谱**: 从 GraphRAG entities/relationships 生成力导向图
-- **派生时间线**: 从 GraphRAG covariates/text_units 生成时间线
+## 2. 当前项目状态
 
-### 技术特性
-- **GraphRAG v3.0.9**: Microsoft 官方知识图谱管道
-- **多模式检索**: Local / Global / DRIFT / Basic 四种搜索模式
-- **实体类型**: person / organization / location / event / item / technique / rule
-- **离线 Embedding**: 本地 OpenAI-compatible embedding server
-- **LLM**: MiniMax via LiteLLM (OpenAI-compatible API)
+| 模块 | 状态 | 说明 |
+|---|---|---|
+| FastAPI 服务 | 可用 | 服务启动入口，提供全量 REST API 并托载 Web Dashboard，端口为 8000。 |
+| GraphRAG 索引 | 可用 | 依赖 GraphRAG CLI 异步构建。可以为上传的小说自动准备 Workspace、生成 settings.yaml 并构建索引。 |
+| GraphRAG 查询 | 可用 | 主问答路径。基于 GraphRAG Python API，支持 Local / Global / DRIFT / Basic 四种检索模式和 Auto 智能路由。 |
+| 本地 embedding | 需要配置 | 依赖本地运行的 OpenAI-compatible Embedding Server（推荐使用 GPU 或 CPU 加速的 OpenVINO 服务）。 |
+| MiniMax / LLM | 需要 API Key | 依赖外接大语言模型（默认 MiniMax，支持备用 Mimo/Anthropic API）提供文本实体抽取和问答生成能力。 |
+| 旧版 RAG | legacy / 已清理 | 旧版 FAISS 向量存储、混合检索和 `retrieval.py` 核心逻辑已被彻底物理删除，不再作为主路径。 |
+| 测试 | 可用 | 拥有 181 个 pytest 测试用例，通过率 100%。 |
 
-## 快速开始
+## 3. 项目结构
 
-### 环境要求
-- Python >=3.11,<3.14
-- conda 环境: `chaishu`
-- Microsoft GraphRAG v3.0.9（已通过 editable install 安装）
-- 本地 Embedding server (http://localhost:8000/v1)
-
-### 安装依赖
-
-```bash
-python -m pip install -r requirements.txt
-```
-
-### 配置环境变量
-
-创建 `.env` 文件：
-
-```bash
-copy .env.example .env
-```
-
-然后在 `.env` 中填入：
-
-```env
-MINIMAX_API_KEY=your_api_key_here
-MINIMAX_BASE_URL=https://api.minimax.chat/v1
-MINIMAX_CHAT_MODEL=MiniMax-m2.7-HighSpeed
-
-# GraphRAG 配置
-GRAPHRAG_INDEX_TIMEOUT_SEC=7200
-GRAPHRAG_CHAT_MODEL=MiniMax-m2.7-HighSpeed
-GRAPHRAG_CHAT_API_BASE=https://api.minimax.chat/v1
-GRAPHRAG_API_KEY=${MINIMAX_API_KEY}
-GRAPHRAG_EMBEDDING_MODEL=Qwen/Qwen3-Embedding-4B
-GRAPHRAG_EMBEDDING_API_BASE=http://localhost:8000/v1
-
-# 默认书籍配置（可修改）
-DEFAULT_BOOK_ID=default-book
-DEFAULT_BOOK_TITLE=默认小说
-DEFAULT_BOOK_PATH=default-book.txt
-```
-
-### 上传小说
-
-将你的小说文本文件（TXT 格式）放到项目根目录，例如 `my-novel.txt`。
-
-### 构建索引
-
-```bash
-python scripts/build_index.py
-```
-
-### 启动服务
-
-```bash
-python scripts/run_api.py
-```
-
-打开浏览器访问 `http://127.0.0.1:8000` 查看前端界面。
-
-### 运行评测
-
-准备评测用例文件 `eval_cases.jsonl`，然后运行：
-
-```bash
-python scripts/run_eval.py
-```
-
-评测结果会写入 `data/runtime/eval_report.json`，工作台里的 Evaluation Dashboard 会自动读取。
-
-## 项目结构
-
-```
+```text
 fanren-novel-system/
-├── novel_system/
-│   ├── graphrag_app/        # GraphRAG 应用层（核心）
-│   │   ├── workspace.py     # 工作区生命周期管理
-│   │   ├── input_builder.py # TXT -> GraphRAG input/*.txt
-│   │   ├── settings_builder.py  # 生成 settings.yaml
-│   │   ├── prompt_manager.py    # 小说领域 Prompt 管理
-│   │   ├── index_runner.py      # CLI subprocess 索引执行
-│   │   ├── table_loader.py      # Parquet 表加载与别名映射
-│   │   ├── table_validator.py   # 输出表完整性校验
-│   │   ├── query_router.py      # local/global/drift/basic 路由
-│   │   ├── query_engine.py      # GraphRAG Python API 查询入口
-│   │   ├── answer_adapter.py    # GraphRAG 结果 -> AskResponse
-│   │   ├── graph_projector.py   # entities/relationships -> 前端图谱
-│   │   ├── timeline_projector.py # covariates/text_units -> 时间线
-│   │   └── debug_dump.py        # 调试输出
-│   ├── services/            # 业务服务层
-│   │   ├── indexing.py      # GraphRAG 索引编排
-│   │   ├── qa.py            # GraphRAG 查询入口
-│   │   ├── continuation.py  # 续写（迁移中降级）
-│   │   └── stats.py         # 统计
-│   ├── legacy/              # 旧 RAG 模块（参考）
-│   ├── api.py               # FastAPI 路由
-│   ├── config.py            # 配置管理
-│   ├── models.py            # 数据模型
-│   └── validator.py         # 验证层
-├── static/                  # 前端
-├── templates/               # HTML 模板
-├── tests/graphrag_app/      # GraphRAG 测试
-└── data/books/{book_id}/graphrag/
-    ├── input/               # 章节 TXT
-    ├── settings.yaml        # GraphRAG 配置
-    ├── prompts/             # 小说领域 Prompt
-    ├── output/              # Parquet 表
-    └── derived/             # 前端视图（graph_view.json, timeline_view.json）
+  novel_system/
+    api.py                  # FastAPI 路由，已适配 GraphRAG 异步查询模式
+    config.py               # 配置管理，加载环境变量并自动构建配置实例
+    graphrag_app/           # GraphRAG 适配层（核心新增），封装 Workspace、QueryEngine 等
+      workspace.py          # 负责每本小说的 Workspace 初始化与环境准备
+      input_builder.py      # 负责将小说原始 TXT 转换为 GraphRAG 标准输入格式
+      settings_builder.py   # 自动渲染 settings.yaml 配置文件
+      index_runner.py       # 封装 subprocess 执行 GraphRAG CLI 索引命令
+      query_engine.py       # 封装 GraphRAG Python API，统一四种检索方式
+      query_router.py       # 智能路由用户问题至最匹配的检索模式
+      table_loader.py       # 负责读取 GraphRAG 生成的 Parquet 数据表
+      graph_projector.py    # 提取实体和关系生成前端图谱 JSON
+      timeline_projector.py # 提取事件时间线数据
+    services/               # 业务服务层 Mixin
+      indexing.py           # 构建流水线编排
+      qa.py                 # GraphRAG 多模式问答接口
+      continuation.py       # 情节续写服务（当前处于降级预览阶段）
+    indexing/               # 重构后的索引子包，承载小说章节分拆、场景提取等基础解析
+    llm.py                  # 大模型调用客户端，支持 MiniMax 与 Mimo
+    models.py               # 数据契约定义（Pydantic v2 模型）
+    validator.py            # 回答一致性与合规性验证层
+  templates/                # 页面模板（Jinja2）
+  static/                   # 静态资源（CSS/JS）
+    js/                     # 前端 ES Modules 模块
+    app.js                  # 遗留死代码（仅用于测试回归，已废弃）
+  tests/                    # pytest 测试套件
+    graphrag_app/           # GraphRAG 适配层专项测试
+  start_server.py           # 统一后端服务启动入口
+  requirements.txt          # Python 依赖清单
+  .env.example              # 环境变量模板
 ```
 
-## API 文档
+## 4. 快速开始与启动指南
 
-启动服务后访问：
-- Swagger UI: `http://127.0.0.1:8000/docs`
-- ReDoc: `http://127.0.0.1:8000/redoc`
+### 4.1 环境准备
 
-### 主要端点
+1. **安装 Python 运行时**：建议使用 Python 3.11 或 3.12。
+2. **激活 Conda 环境**：
+   ```bash
+   conda activate chaishu
+   ```
+3. **安装依赖**：
+   ```bash
+   pip install -r requirements.txt
+   ```
+4. **安装 Microsoft GraphRAG**：本项目使用 `graphrag` 库进行索引与检索，需要以可编辑模式（editable install）安装本地的 `graphrag` 包（指定版本 v3.0.9）：
+   ```bash
+   pip install -e D:\pythonProject\graphrag\packages\graphrag
+   ```
 
-#### `POST /api/books/{book_id}/ask`
-GraphRAG 智能问答
+### 4.2 配置环境变量
 
-```json
-{
-  "user_query": "主角是怎么得到关键道具的？",
-  "search_mode": "auto",
-  "conversation_history": [],
-  "debug": false
-}
+复制 `.env.example` 并创建 `.env`：
+```bash
+cp .env.example .env
 ```
+根据你的环境修改 `.env` 中的核心配置：
+- `MINIMAX_API_KEY`: 填入你的 MiniMax 大模型 API Key。
+- `EMBEDDING_PROVIDER`: 默认为 `local_openvino`，依赖本地的 Embedding 向量服务。
+- `LOCAL_EMBEDDING_MODEL`: 默认为 `BAAI/bge-small-zh-v1.5`。
+- `GRAPHRAG_EMBEDDING_API_BASE`: 本地 Embedding 服务接口地址（通常为 `http://localhost:8000/v1`）。
 
-search_mode 选项: `auto` | `local` | `global` | `drift` | `basic`
+> [!IMPORTANT]
+> 项目非常依赖本地 Embedding Server 和 MiniMax API。运行索引与问答前，请确保 Embedding Server 已在后台正常运行。
 
-#### `POST /api/books/{book_id}/continue`
-情节续写（GraphRAG 迁移中，当前返回降级提示）
-
-```json
-{
-  "user_query": "主角进入门派后的第一次历练"
-}
-```
-
-#### `POST /api/books`
-上传新书
-
-#### `POST /api/books/{book_id}/index`
-为书籍构建索引
-
-#### `GET /api/books`
-获取书籍列表
-
-#### `GET /api/books/{book_id}/graph`
-获取人物关系图谱
-
-#### `GET /api/books/{book_id}/timeline`
-获取情节时间线
-
-#### `GET/PUT /api/books/{book_id}/canon`
-获取/更新世界观设定
-
-## 查询重写
-
-系统会自动对用户查询进行优化：
-
-1. **别名扩展**: 支持人物别名映射，如"二愣子"自动扩展为包含主角真名
-2. **指代消解**: 自动识别"那个瓶子"、"这个功法"等指代
-3. **上下文提取**: 从对话历史中提取关键人物和实体
-4. **章节引用**: 提取章节号并扩展到查询中
-
-## 追踪功能
-
-系统支持完整的请求追踪，用于调试和分析：
+### 4.3 启动 API 服务
 
 ```bash
-# 启用追踪返回
-curl -X POST "http://localhost:8000/api/books/{book_id}/ask" \
-  -H "Content-Type: application/json" \
-  -d '{"user_query": "问题内容", "debug": true}'
+conda run -n chaishu python start_server.py
+```
+服务启动后，可以访问以下页面：
+- **Web 可视化控制台 (Dashboard)**: `http://localhost:8000`
+- **FastAPI 交互式 API 文档 (Swagger)**: `http://localhost:8000/docs`
+
+### 4.4 书籍导入与索引构建
+
+1. 访问 Web 页面（Dashboard）或者使用 REST API 注册一本书（例如上传 `.txt` 小说）。
+2. 在控制台点击 **"构建索引"**，或者发送 POST 请求：
+   ```bash
+   curl -X POST "http://localhost:8000/api/books/{book_id}/start-index"
+   ```
+3. 构建索引将通过子进程异步调用 `graphrag index`，可能耗时较长（需要进行大范围实体抽取与关系提炼）。可以通过 `GET /api/books/{book_id}/status` 监控构建进度。
+4. 索引构建完成后，系统将自动生成对应的派生图谱和时间线，供前端渲染。
+
+### 4.5 运行测试
+
+项目自带完整的回归测试用例，在修改代码或配置文件后，请务必运行测试以确保系统没有引入 Regression：
+```bash
+conda run -n chaishu python -m pytest
 ```
 
-返回的响应中会包含 `trace` 字段，包含：
-- `query_rewrite`: 查询重写详情（原文、重写后、扩展词）
-- `retrieval`: 检索详情（目标、命中数、Top10 命中）
-- `evidence_spans`: 证据片段详情
-- `total_duration_ms`: 总耗时
+## 5. 常见排错机制
 
-环境变量控制：
-- `TRACE_ENABLED=true` - 启用追踪日志写入文件
-- `TRACE_LOG_LEVEL=INFO` - 日志级别
+### 5.1 导入新书后在 Web 页面“点击导入”按钮没有反应
+- **原因**：浏览器缓存了旧的前端 JS 文件。
+- **解决方法**：请在浏览器中执行**强刷缓存**（Windows 快捷键 `Ctrl + F5`，或在开发者工具中开启 "Disable Cache"），然后再试。
 
-## 验证层
+### 5.2 索引构建任务报错或卡在 0% 不动
+- **原因**：通常是由于本地 Embedding 服务未启动，或大模型 API 调用由于无效 Key、额度不足、网络超时而报错。
+- **排错步骤**：
+  1. 检查本地 `http://localhost:8000/v1` (或你配置的 Embedding 路径) 是否可访问，并且可以通过 `/v1/embeddings` 生成向量。
+  2. 查看后台控制台的日志，或者是 `data/books/{book_id}/graphrag/` 路径下的 `index_runner.py` 报错日志。
+  3. 检查大模型 API 额度，确认 `.env` 中填写的 `MINIMAX_API_KEY` 正确无误。
 
-系统内置多层验证机制：
-
-1. **Evidence Gate**: 检测检索结果是否足以回答问题，不足时返回拒答
-2. **Answer Validator**: 评估回答与证据的一致性
-3. **Continuation Validator**: 检查续写内容的人物一致性和世界观合规性
-4. **GraphRAG Table Validator**: 验证索引输出表完整性
-
-## 人物关系图谱
-
-系统自动提取人物并构建关系网络：
-
-- 基于章节内容的自动命名实体识别
-- 基于事件的参与者关系推断
-- 支持人物别名映射
-- 知识图谱种子修正
-- 力导向图可视化，支持节点拖拽和缩放
-
-## 开发指南
-
-### 添加小说特定规则（可选）
-
-在 `novel_system/novel_heuristics.py` 中添加小说特定的规则：
-
-```python
-def heuristic_answer(query: str, scope: Scope, memory: MemoryState) -> str | None:
-    q = query.strip()
-    # 添加特定问题的快速响应
-    if "某个特定问题" in q:
-        return "根据第X章的答案..."
-    return None
-
-def heuristic_continuation(query: str) -> str | None:
-    # 添加续写限制规则
-    if "超出设定" in query:
-        return "此要求超出当前设定范围，无法续写。"
-    return None
-```
-
-### 扩展检索目标
-
-在 `novel_system/models.py` 中定义新的 `RetrievalTarget`：
-
-```python
-RetrievalTarget = Literal[
-    "chapter_chunks",
-    "character_card",
-    "your_new_target",
-]
-```
-
-## 技术栈
-
-- **后端**: FastAPI
-- **前端**: HTML5 Canvas + Vanilla JavaScript
-- **知识图谱**: Microsoft GraphRAG v3.0.9
-- **检索模式**: Local / Global / DRIFT / Basic Search
-- **LLM**: MiniMax via LiteLLM
-- **Embedding**: Qwen3-Embedding-4B (local server)
-- **数据存储**: Parquet + 本地文件系统
-
-## 更新日志
-
-### 2026-05-22 - 项目结构优化与重构
-
-**优化调整：**
-- **代码精简与重构**:
-  - 将 `novel_system/artifacts/` 目录下的所有构建逻辑（`SceneSegmentBuilder`, `CharacterRegistryBuilder` 等）与 `novel_system/index_pipeline.py` 整合至 `novel_system/indexing.py`。
-  - 提取公共的文本处理逻辑（如句子切分、事件语句评分、预编译正则表达式等）至 `novel_system/utils/text_utils.py`，实现模块解耦。
-  - 清理多余的临时文件，统一测试与运行入口。
-
-### 2026-04-14 - 场景感知检索重构
-
-**新模块：**
-- **Artifact Pipeline (`novel_system/artifacts/`)**: 稳定的中间产物构建器
-  - `SceneSegmentBuilder`: 基于地点转换进行场景分割，保留角色和事件元数据
-  - `CharacterRegistryBuilder`: 角色注册表，支持别名合并、活跃章节范围追踪
-  - `targets.py`: 从场景和角色注册表构建 `chapter_chunks`、`event_timeline`、`character_card`
-- **Search Package (`novel_system/search/`)**: 多目标检索编排
-  - `SearchOrchestrator`: 搜索编排器，支持精确别名匹配和稀疏文本匹配
-  - `profiles.py`: 目标配置（文本字段、ID字段、别名字段）
-  - `base.py`: 基础类型定义
-- **Index Pipeline (`novel_system/index_pipeline.py`)**: 公共索引管道入口
-
-**核心改进：**
-- **检索意图驱动**: `PlannerOutput` 新增 `retrieval_intent` 字段
-  - `alias_resolution`: 角色查询优先精确别名匹配
-  - `causal_chain`: 因果链查询优先事件时间线
-  - `scene_evidence`: 默认场景证据检索
-- **角色别名解析**: 支持"二愣子"→"韩立"等别名自动合并
-- **章节范围过滤**: 检索结果自动按章节范围过滤，支持角色卡 `active_range`
-
-**测试：**
-- 新增 17 个测试用例，覆盖场景分割、角色注册表、目标构建器、搜索编排器
-- 总计 89 个测试通过
-
-### 2026-04-14 - 实体一致性检查 & Embedding API 修复
-
-**新功能：**
-- **实体抽取模块 (EntityExtractor)**: 从文本中抽取实体属性（性格、外貌、体型、颜色、修为等级）
-  - 支持预编译正则模式，优化性能
-  - 词库 + 正则上下文约束的双重匹配
-  - 支持否定词检测，避免误匹配
-  - 支持性格对立词检测（如"谨慎"与"莽撞"）
-  - 支持修为等级跳跃检测
-- **实体一致性检查**: 验证答案/续写与证据之间的实体属性是否一致
-  - 集成到 AnswerValidator 和 ContinuationValidator
-  - 自动检测人物性格、外貌、修为等级矛盾
-
-**修复：**
-- 修复 MiniMax embedding API 调用格式：
-  - 使用 `texts` 字段替代 `input`
-  - 添加必需的 `type` 参数（`query`/`document`）
-  - 正确处理 `vectors` 响应字段
-
-**改进：**
-- validator.py 扩展 271 行，增强验证能力
-- 新增 entity_extractor.py 模块
-- 新增 test_entity_extractor.py 测试
-
-### 2026-04-13 - 验证层与追踪系统
-
-**新功能：**
-- **追踪系统 (Tracing)**: 完整的请求追踪能力，记录查询重写、检索、验证等各阶段详情
-  - 通过 `debug=true` 参数启用，返回完整追踪数据
-  - 支持环境变量配置：`TRACE_ENABLED`、`TRACE_LOG_LEVEL`
-- **验证层 (Validation Layer)**: 多层次的内容验证机制
-  - **Evidence Gate**: 证据门控，检测检索结果是否足以回答问题
-  - **Answer Validator**: 答案验证器，评估回答质量
-  - **Continuation Validator**: 续写验证器，检查人物一致性、世界观合规性
-  - **Spoiler Guard**: 剧透防护，自动检测并处理超出范围的剧透内容
-- **语义评分器**: 新增语义相关性评分模块
-
-**改进：**
-- 类型注解兼容性优化（使用 `Optional[X]` 替代 `X | None`）
-- 移除 dataclass slots 以提升兼容性
-
-## 许可证
-
-MIT License
-
-## 贡献
-
-欢迎提交 Issue 和 Pull Request！
+### 5.3 提示 `ModuleNotFoundError: No module named 'graphrag'`
+- **原因**：未在 Conda 环境中正确安装 Microsoft GraphRAG。
+- **解决方法**：执行可编辑模式安装 `pip install -e D:\pythonProject\graphrag\packages\graphrag`，并确认所用 Python 环境与启动服务时的一致。
