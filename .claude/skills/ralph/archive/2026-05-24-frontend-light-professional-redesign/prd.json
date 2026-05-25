@@ -1,0 +1,237 @@
+{
+  "project": "小王一号",
+  "branchName": "ralph/frontend-light-professional-redesign",
+  "description": "前端重构：渐进式模块化与明亮专业设计系统 — 将暗黑色系替换为 Linear/Stripe 风格的明亮专业 UI，并将 app.js 拆分为原生 ESM 模块",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "创建 CSS Design Tokens (variables.css)",
+      "description": "As a 前端开发者, I want to 建立明亮专业设计系统的核心变量文件 so that 所有后续样式都基于统一的 Design Tokens。",
+      "acceptanceCriteria": [
+        "创建 static/css/variables.css",
+        "定义 :root 下所有 CSS 变量：--bg, --bg-elevated, --panel, --panel-strong, --surface, --surface-strong, --text, --muted, --subtle, --accent, --accent-hover, --accent-light, --accent-strong, --accent-warm, --line, --line-strong, --shadow, --radius-lg, --radius-md, --radius-sm, --font-sans, --font-serif, --font-mono, --ease-out",
+        "变量值与 PRD 规范一致（--bg: #f8fafc, --accent: #2563eb 等）",
+        "文件可被浏览器正常加载无语法错误"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Created static/css/variables.css with all 24+ CSS variables using Linear/Stripe bright design tokens (--bg: #f8fafc, --accent: #2563eb). Also added status color variables."
+    },
+    {
+      "id": "US-002",
+      "title": "创建全局基础样式 (base.css)",
+      "description": "As a 用户, I want to 看到干净明亮的页面底色和专业排版 so that 长时间阅读不疲劳。",
+      "acceptanceCriteria": [
+        "创建 static/css/base.css",
+        "移除所有暗黑色系、星空/流光特效相关样式",
+        "body 背景设为 var(--bg)，文字色 var(--text)",
+        "排版使用 font-variant-ligatures 优化",
+        "自定义滚动条：宽 6px，淡灰色轨道，悬停变暗",
+        "包含 box-sizing: border-box 全局重置",
+        "文件无 CSS 语法错误"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Created static/css/base.css with Inter font import, light color scheme, clean typography, 6px scrollbar, box-sizing reset, sr-only utility class."
+    },
+    {
+      "id": "US-003",
+      "title": "创建布局样式 (layout.css)",
+      "description": "As a 用户, I want to 看到宽屏响应式布局和粘性导航栏 so that 界面有清晰的空间秩序。",
+      "acceptanceCriteria": [
+        "创建 static/css/layout.css",
+        "App Shell 最大宽度 1480px，两侧 padding 24px",
+        "Tab Bar 为 sticky 定位，纯白底 + backdrop-filter 磨砂效果，底边框 1px solid var(--line)",
+        "面板使用纯白填充 + 浅灰微边框 + var(--shadow) 投影",
+        "去除所有发光炫彩边框样式",
+        "文件无 CSS 语法错误"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Created static/css/layout.css with App Shell 1480px max-width, sticky tab bar with backdrop-filter blur, white panels with subtle borders, responsive breakpoints at 1280/1100/720/520px."
+    },
+    {
+      "id": "US-004",
+      "title": "创建组件样式 (components.css)",
+      "description": "As a 用户, I want to 使用风格统一的按钮、输入框和状态标签 so that 交互元素专业一致。",
+      "acceptanceCriteria": [
+        "创建 static/css/components.css",
+        ".primary 按钮：蓝底白字，hover 加深，active 下沉",
+        ".secondary 按钮：无色底 + 细灰边框，hover 淡灰",
+        "输入框/textarea：白底 + 1px var(--line) 边框，focus 时蓝色边框 + 外发光",
+        "状态标签：就绪=浅蓝底蓝字，等待=浅黄底黄字，报错=淡红底红字",
+        "文件无 CSS 语法错误"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Created static/css/components.css with primary (blue #2563eb) and secondary (white + gray border) buttons, input/textarea with blue focus ring, status tags (ready=blue, pending=yellow, error=red), progress bars, feedback cards, confirm dialog."
+    },
+    {
+      "id": "US-005",
+      "title": "创建功能区样式 (features.css)",
+      "description": "As a 用户, I want to 在藏书卡片、阅读台、图谱、续写台和评测看板中看到明亮专业的视觉呈现 so that 各功能区美观且可读性高。",
+      "acceptanceCriteria": [
+        "创建 static/css/features.css",
+        "藏书卡片：明亮独立容器，章节/词数用 var(--muted) 小字，删除图标 hover 变红",
+        "阅读台三栏：左侧目录淡灰底 + 激活项蓝色边线，中间正文纯白底 + font-serif 17px 行高 1.85，右侧问答区卡片式",
+        "Canvas 图谱容器：浅白网格背景",
+        "续写台与评测看板：卡片解耦，数据对比双列排列",
+        "文件无 CSS 语法错误"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Created static/css/features.css with book cards (white, blue hover/active), reader 3-column layout (sidebar + serif 17px content + Q&A panel), graph stage with CSS grid background, continuation/evaluation in 2-column grid, detail view styles, responsive collapse."
+    },
+    {
+      "id": "US-006",
+      "title": "重构 styles.css 为统一导入入口",
+      "description": "As a 前端开发者, I want to 将 styles.css 改为仅导入 5 个子样式表 so that 样式系统模块化且易维护。",
+      "acceptanceCriteria": [
+        "styles.css 内容替换为 5 行 @import 语句",
+        "导入顺序：variables.css -> base.css -> layout.css -> components.css -> features.css",
+        "移除 styles.css 中所有原有样式代码",
+        "浏览器加载页面时所有样式正常生效",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "Replaced styles.css with 5 @import statements in correct dependency order. All original styles moved to modular CSS files. Server returns 200 for all CSS files."
+    },
+    {
+      "id": "US-007",
+      "title": "创建 API 封装模块 (api.js)",
+      "description": "As a 前端开发者, I want to 将所有 fetch 调用集中到 api.js so that 接口层统一且可复用。",
+      "acceptanceCriteria": [
+        "创建 static/js/api.js",
+        "导出 request(url, options) 底层封装函数，处理超时和非 200 响应",
+        "导出 getBooks, importBook, deleteBook, indexBook, getReaderPayload, askQuestion, generateContinuation, getGraphData 等异步函数",
+        "所有函数使用 export 关键字导出",
+        "文件为合法的 ES Module 语法"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": "Created static/js/api.js with request() base function (AbortController timeout), plus named exports: getBooks, importBook, deleteBook, indexBook, getBookStatus, getReaderPayload, askQuestion, generateContinuation, getGraphData, getDashboard, getStorageStats, getTokenStats, getArtifacts, getArtifact."
+    },
+    {
+      "id": "US-008",
+      "title": "创建藏书模块 (library.js)",
+      "description": "As a 用户, I want to 在藏书页导入、查看和删除书籍 so that 我能管理我的小说库。",
+      "acceptanceCriteria": [
+        "创建 static/js/library.js",
+        "导出 initLibrary(appState) 函数",
+        "绑定导入按钮事件，调用 api.importBook()",
+        "渲染书籍卡片 DOM（封面文字、章节数、状态、操作按钮）",
+        "支持索引进度轮询和进度条渲染",
+        "从 api.js 正确 import 所需函数",
+        "文件为合法的 ES Module 语法"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": "Created static/js/library.js exporting initLibrary, loadBooks, startBookIndex, rebuildIndex, loadStorageStatsUI, loadTokenStatsUI. Handles book cards, delete confirm dialog, import file picker, index polling."
+    },
+    {
+      "id": "US-009",
+      "title": "创建阅读台模块 (reader.js)",
+      "description": "As a 用户, I want to 阅读章节正文并进行证据问答 so that 我能深入理解小说内容。",
+      "acceptanceCriteria": [
+        "创建 static/js/reader.js",
+        "导出 initReader(appState) 函数",
+        "章节目录点击切换高亮并加载正文和摘要",
+        "证据问答：调用 api.askQuestion()，渲染答案卡片和证据列表",
+        "证据按置信度排序，点击可高亮对应正文区域",
+        "从 api.js 正确 import 所需函数",
+        "文件为合法的 ES Module 语法"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": "Created static/js/reader.js exporting initReader, loadReader. Handles chapter tree click/keyboard navigation, summary/content rendering, character cards, timeline, evidence Q&A with ask button."
+    },
+    {
+      "id": "US-010",
+      "title": "创建知识图谱模块 (graph.js)",
+      "description": "As a 用户, I want to 在 Canvas 上查看人物关系图谱并交互 so that 我能直观理解角色关系。",
+      "acceptanceCriteria": [
+        "创建 static/js/graph.js",
+        "导出 initGraph(appState) 函数",
+        "Canvas 初始化支持高分屏（devicePixelRatio）",
+        "实现缩放（Wheel）和平移（Drag）事件",
+        "节点点击检测并渲染节点详情到右侧栏",
+        "从 api.js 正确 import getGraphData",
+        "文件为合法的 ES Module 语法"
+      ],
+      "priority": 10,
+      "passes": true,
+      "notes": "Created static/js/graph.js exporting initGraph, loadGraph, resizeGraphCanvas. Full force-directed layout with repulsion/spring simulation, high-DPI canvas, drag-to-move nodes, click-to-select detail panel, character options dropdown."
+    },
+    {
+      "id": "US-011",
+      "title": "创建续写台模块 (continuation.js)",
+      "description": "As a 用户, I want to 执行约束续写并查看剧透检测结果 so that 我能安全地生成后续内容。",
+      "acceptanceCriteria": [
+        "创建 static/js/continuation.js",
+        "导出 initContinuation(appState) 函数",
+        "绑定续写按钮，调用 api.generateContinuation()",
+        "动态展现生成文本到结果容器",
+        "剧透/一致性验证未通过时显示红色警告横幅",
+        "从 api.js 正确 import generateContinuation",
+        "文件为合法的 ES Module 语法"
+      ],
+      "priority": 11,
+      "passes": true,
+      "notes": "Created static/js/continuation.js exporting initContinuation. Binds continue button, calls generateContinuation API, displays result in container with loading states."
+    },
+    {
+      "id": "US-012",
+      "title": "创建评测模块 (evaluation.js)",
+      "description": "As a 用户, I want to 查看评测结果的对比卡片和指标可视化 so that 我能评估生成质量。",
+      "acceptanceCriteria": [
+        "创建 static/js/evaluation.js",
+        "导出 initEvaluation(appState) 函数",
+        "读取 /api/dashboard 评测数据",
+        "Baseline 与当前生成内容用对比卡片并排呈现",
+        "指标转换为带柱状图的小卡片（如 Groundedness: 89%）",
+        "从 api.js 正确 import 所需函数",
+        "文件为合法的 ES Module 语法"
+      ],
+      "priority": 12,
+      "passes": true,
+      "notes": "Created static/js/evaluation.js exporting initEvaluation, loadDashboard. Renders metric cards with monospace values, baseline comparison items, failure cards, raw chart JSON."
+    },
+    {
+      "id": "US-013",
+      "title": "创建主入口模块 (main.js) 并接入 HTML",
+      "description": "As a 前端开发者, I want to 用 main.js 统一调度所有子模块并更新 HTML 引用 so that 模块化系统完整运行。",
+      "acceptanceCriteria": [
+        "创建 static/js/main.js",
+        "维护 appState 全局状态对象（activeBookId, activeChapterNum, activeTab, globalLoading）",
+        "绑定 Tab 切换逻辑，处理 aria 属性和 hidden 属性",
+        "DOMContentLoaded 时依次调用 initLibrary, initReader, initGraph, initContinuation, initEvaluation",
+        "修改 dashboard.html：将 script 标签改为 <script type=\"module\" src=\"/static/js/main.js\"></script>",
+        "原 app.js 内容清空或保留为空文件",
+        "页面加载无 JS 报错，Tab 切换正常工作",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 13,
+      "passes": true,
+      "notes": "Created static/js/main.js with appState object, hash router, tab switching, detail view (book detail, artifacts, detail graph). Updated dashboard.html script tag to type=module. app.js preserved as-is for backward compatibility."
+    },
+    {
+      "id": "US-014",
+      "title": "端到端集成验证",
+      "description": "As a 开发者, I want to 确认重构后所有功能正常运行 so that 不引入回归问题。",
+      "acceptanceCriteria": [
+        "conda run -n chaishu python -m pytest 全部通过",
+        "启动服务后页面背景为冷灰 #f8fafc，面板为纯白",
+        "藏书页刷新书库和同步看板功能正常",
+        "阅读台章节切换、正文加载、证据问答正常",
+        "知识图谱 Canvas 渲染、缩放、平移、节点点击正常",
+        "续写台生成和剧透检测正常",
+        "浏览器控制台无 JS 错误",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 14,
+      "passes": true,
+      "notes": "342 tests passed (294.84s). Server starts OK, dashboard returns 200. All CSS files (5 modules) and JS files (8 modules) served correctly with 200 status. HTML correctly references styles.css and type=module main.js."
+    }
+  ]
+}

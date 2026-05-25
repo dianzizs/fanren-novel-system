@@ -169,13 +169,14 @@ class ContinuationTrace(BaseModel):
 
 class AskRequest(BaseModel):
     user_query: str
-    scope: Scope = Field(default_factory=Scope)
+    scope: Scope = Field(default_factory=Scope)  # 保留但废弃，不参与逻辑
     conversation_history: list[ConversationTurn] = Field(default_factory=list)
     session_id: str = "default"
     top_k: int = 6
     retrieved_text: Optional[str] = None
     test_harness: dict[str, Any] = Field(default_factory=dict)
-    debug: bool = False  # 启用追踪返回
+    debug: bool = False
+    search_mode: Literal["auto", "local", "global", "drift", "basic"] = "auto"
 
 
 class ContinueRequest(BaseModel):
@@ -209,6 +210,10 @@ class BookInfo(BaseModel):
     indexed_at: Optional[datetime] = None
     status: Literal["pending", "indexing", "ready", "error"] = "pending"
     index_progress: float = 0.0
+    text_unit_count: int = 0
+    entity_count: int = 0
+    relationship_count: int = 0
+    community_count: int = 0
 
 
 class AskResponse(BaseModel):
@@ -278,4 +283,37 @@ class TokenStatsSummary(BaseModel):
     total_prompt_tokens: int = 0
     total_completion_tokens: int = 0
     total_tokens: int = 0
+
+
+# === OpenAI-compatible Embedding API models ===
+
+
+class EmbeddingRequest(BaseModel):
+    """OpenAI-compatible embedding request."""
+    input: str | list[str] | list[int] | list[list[int]]
+    model: str = "Qwen/Qwen3-Embedding-4B"
+    encoding_format: Optional[Literal["float", "base64"]] = "float"
+    dimensions: int | None = None
+    user: str | None = None
+
+
+class EmbeddingObject(BaseModel):
+    """Single embedding object."""
+    object: Literal["embedding"] = "embedding"
+    embedding: list[float]
+    index: int
+
+
+class EmbeddingUsage(BaseModel):
+    """Token usage for embedding request."""
+    prompt_tokens: int
+    total_tokens: int
+
+
+class EmbeddingResponse(BaseModel):
+    """OpenAI-compatible embedding response."""
+    object: Literal["list"] = "list"
+    data: list[EmbeddingObject]
+    model: str
+    usage: EmbeddingUsage
 

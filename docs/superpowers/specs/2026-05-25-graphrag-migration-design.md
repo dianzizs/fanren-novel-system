@@ -1156,7 +1156,7 @@ commit 12: docs+frontend: update for GraphRAG architecture (Phase 9)
 - Chat LLM：MiniMax (https://api.minimax.chat/v1)
 
 你必须先阅读并审计本地 GraphRAG 项目，不能凭空写接口。
-请先完成 Phase 0 的审计产物，不要改业务代码。
+请先完成 Phase 0 的审计产物，不要改业务代码，然后依次完成所有phase
 ```
 
 ---

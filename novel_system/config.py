@@ -70,6 +70,18 @@ class AppConfig:
     mimo_api_key: str = ""
     mimo_base_url: str = "https://token-plan-cn.xiaomimimo.com/anthropic"
     mimo_chat_model: str = "mimo-v2.5"
+    # GraphRAG 配置
+    graphrag_workspace_name: str = "graphrag"
+    graphrag_use_cli_for_index: bool = True
+    graphrag_python_executable: str = "graphrag"
+    graphrag_index_timeout_sec: int = 7200
+    graphrag_default_search_mode: str = "auto"
+    graphrag_enable_claims: bool = True
+    graphrag_embedding_api_base: str = "http://localhost:8000/v1"
+    graphrag_embedding_model: str = "Qwen/Qwen3-Embedding-4B"
+    graphrag_chat_model: str = "MiniMax-m2.7-HighSpeed"
+    graphrag_chat_api_base: str = "https://api.minimax.chat/v1"
+    graphrag_api_key: str = ""
 
     @classmethod
     def load(cls) -> "AppConfig":
@@ -137,4 +149,16 @@ class AppConfig:
             # Reranker 配置
             rerank_enabled=os.getenv("RERANK_ENABLED", "true").lower() == "true",
             reranker_type=os.getenv("RERANKER_TYPE", "rule_based"),
+            # GraphRAG 配置
+            graphrag_workspace_name=os.getenv("GRAPHRAG_WORKSPACE_NAME", "graphrag"),
+            graphrag_use_cli_for_index=os.getenv("GRAPHRAG_USE_CLI_FOR_INDEX", "true").lower() == "true",
+            graphrag_python_executable=os.getenv("GRAPHRAG_PYTHON_EXECUTABLE", "graphrag"),
+            graphrag_index_timeout_sec=int(os.getenv("GRAPHRAG_INDEX_TIMEOUT_SEC", "7200")),
+            graphrag_default_search_mode=os.getenv("GRAPHRAG_DEFAULT_SEARCH_MODE", "auto"),
+            graphrag_enable_claims=os.getenv("GRAPHRAG_ENABLE_CLAIMS", "true").lower() == "true",
+            graphrag_embedding_api_base=os.getenv("GRAPHRAG_EMBEDDING_API_BASE", "http://localhost:8000/v1"),
+            graphrag_embedding_model=os.getenv("GRAPHRAG_EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-4B"),
+            graphrag_chat_model=os.getenv("GRAPHRAG_CHAT_MODEL", "MiniMax-m2.7-HighSpeed"),
+            graphrag_chat_api_base=os.getenv("GRAPHRAG_CHAT_API_BASE", "https://api.minimax.chat/v1"),
+            graphrag_api_key=os.getenv("GRAPHRAG_API_KEY", os.getenv("MINIMAX_API_KEY", "")),
         )

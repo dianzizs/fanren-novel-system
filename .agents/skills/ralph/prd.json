@@ -1,18 +1,17 @@
 {
   "project": "小王一号",
-  "branchName": "ralph/adaptive-graph-density",
-  "description": "Make the knowledge graph choose an appropriate number of characters and events from the actual indexed content instead of always showing a small fixed slice.",
+  "branchName": "ralph/graphrag-migration",
+  "description": "Microsoft GraphRAG 架构迁移：将原有 RAG 主链路与防剧透机制重构为以 GraphRAG 为核心的中文长篇小说分析系统",
   "userStories": [
     {
       "id": "US-001",
-      "title": "Add failing tests for adaptive graph budget",
-      "description": "As a developer, I want to write tests that capture the expected behavior of the adaptive graph budget helper before implementing it.",
+      "title": "本地 GraphRAG 源码审计与验证",
+      "description": "As a 开发者, I want to 审计本地 GraphRAG 安装 so that 确认其版本、CLI 命令以及 API 导出路径是否与迁移设计完全一致。",
       "acceptanceCriteria": [
-        "Create tests/test_interactive_graph_dynamic_budget.py",
-        "Test auto budget expands when many candidates (character_limit > 14, event_limit > 10)",
-        "Test compact budget preserves current small graph behavior (8-14 chars, 6-10 events)",
-        "Test invalid density falls back to auto",
-        "All 3 tests fail because _compute_graph_budget does not exist yet",
+        "创建 scripts/audit_graphrag_local.py",
+        "脚本运行并成功输出：确认 GraphRAG 版本为 v3.0.9、确认 monorepo 结构、并打印主包 packages/graphrag/graphrag/ 的实际安装路径",
+        "运行 python -c 'import graphrag' 成功无报错",
+        "创建 docs/GraphRAG本地源码审计.md，记录 packages/graphrag/graphrag/ 内的 api/index.py, api/query.py, config/init_content.py, query/factory.py 的实际结构与参数",
         "Typecheck passes"
       ],
       "priority": 1,
@@ -21,15 +20,12 @@
     },
     {
       "id": "US-002",
-      "title": "Implement adaptive budget helper in GraphService",
-      "description": "As a developer, I want to add _compute_graph_budget to GraphService so the graph can dynamically size based on candidate counts.",
+      "title": "验证本地 Embedding 与 MiniMax 服务",
+      "description": "As a 开发者, I want to 验证本地 Embedding 接口和 MiniMax API so that 确保后续索引与搜索不会因网络与密钥问题报错中断。",
       "acceptanceCriteria": [
-        "Add _compute_graph_budget method to GraphService in novel_system/graph_service.py",
-        "Support density=compact|auto|expanded with correct caps (compact: 8-14 chars/6-10 events, auto: 12-28 chars/8-18 events, expanded: 20-42 chars/12-28 events)",
-        "Invalid density falls back to auto",
-        "Auto formulas use candidate_count ** 0.55 * 4 for characters and candidate_count ** 0.50 * 3 for events",
-        "Reserve slot for center character when has_center=True",
-        "Tests in test_interactive_graph_dynamic_budget.py pass",
+        "创建 scripts/verify_embedding_server.py",
+        "向本地 Embedding 服务 http://localhost:8000/v1/embeddings 发送测试向量化请求并成功打印返回维度",
+        "向 MiniMax 大模型接口发送聊天请求，验证 API 密钥有效性并打印返回结果",
         "Typecheck passes"
       ],
       "priority": 2,
@@ -38,16 +34,13 @@
     },
     {
       "id": "US-003",
-      "title": "Wire density parameter through API and graph selection",
-      "description": "As a developer, I want to add density query parameter to the graph endpoint and use adaptive budgets in get_interactive_graph.",
+      "title": "工作区冻结与迁移风险清单",
+      "description": "As a 开发者, I want to 冻结当前工作区并添加迁移声明 so that 不会在迁移期间引入无关的修改干扰开发。",
       "acceptanceCriteria": [
-        "Add density='auto' query parameter to /api/books/{book_id}/graph endpoint in novel_system/api.py",
-        "Update get_interactive_graph signature in graph_service.py to accept density parameter",
-        "Replace fixed character_limit=max(8,min(14,limit)) and event_limit=max(6,min(limit,10)) with budget-derived values",
-        "Add candidate_character_count, candidate_event_count, density, character_limit, event_limit to returned stats",
-        "Existing graph endpoint remains backward compatible (density defaults to 'auto')",
-        "Tests pass including test_graph_stats_include_dynamic_budget_metadata",
-        "Typecheck passes"
+        "创建 docs/GraphRAG迁移风险清单.md 与 docs/GraphRAG迁移执行记录.md",
+        "在 README.md 顶部新增 Migration Notice，声明正在往 Microsoft GraphRAG v3 迁移，旧 RAG 正式冻结并进入 legacy",
+        "Typecheck passes",
+        "Tests pass"
       ],
       "priority": 3,
       "passes": false,
@@ -55,14 +48,14 @@
     },
     {
       "id": "US-004",
-      "title": "Add candidate quality tiers to prevent bad name expansion",
-      "description": "As a developer, I want to rank graph candidates by evidence tier so expanded graphs fill from strong candidates first and don't amplify bad names.",
+      "title": "配置与依赖更新",
+      "description": "As a 开发者, I want to 更新依赖和配置 so that 系统能够支持 GraphRAG 所需的环境变量与第三方库。",
       "acceptanceCriteria": [
-        "Add _graph_candidate_tier method: Tier 1=seed/registry with scene evidence, Tier 2=character cards+events, Tier 3=cards+looks_like_graph_name, Tier 99=excluded",
-        "Sort ranked_characters by tier priority before score",
-        "Skip Tier 99 candidates during selection",
-        "Test verifies expanded mode does not select unsupported fragments ahead of seeded names",
-        "Typecheck passes"
+        "在 requirements.txt 中添加 pandas>=2.0, pyarrow>=14.0, pyyaml>=6.0",
+        "在 novel_system/config.py 的 AppConfig 中增加 graphrag_workspace_name, graphrag_chat_model, graphrag_embedding_model 等字段",
+        "在 .env.example 中同步增加 GRAPHRAG_* 相关的配置字段",
+        "Typecheck passes",
+        "Tests pass"
       ],
       "priority": 4,
       "passes": false,
@@ -70,13 +63,12 @@
     },
     {
       "id": "US-005",
-      "title": "Use relationship graph as optional edge evidence",
-      "description": "As a developer, I want to use relationship_graph data as additive edge evidence so character connections appear even without shared events.",
+      "title": "创建 graphrag_app 包 and 路径工具",
+      "description": "As a 开发者, I want to 建立 GraphRAG 模块目录和路径辅助工具 so that 各个组件可以统一解析 workspace 路径。",
       "acceptanceCriteria": [
-        "Build relationship_evidence dict from relationship_graph corpora (parse title 'A/B' pairs)",
-        "Include relationship_weight in edge decision: skip only if shared_events<=0 AND similarity<0.12 AND relationship_weight<=0",
-        "Add relationship_weight to edge weight formula",
-        "Test verifies two characters get a character_relation edge from relationship_graph evidence alone",
+        "创建目录 novel_system/graphrag_app/",
+        "创建 novel_system/graphrag_app/__init__.py 作为空包入口",
+        "创建 novel_system/graphrag_app/paths.py，包含 book_root, graphrag_root, derived_dir, graphrag_settings_path 等路径解析纯函数",
         "Typecheck passes"
       ],
       "priority": 5,
@@ -85,18 +77,12 @@
     },
     {
       "id": "US-006",
-      "title": "Update frontend to use density parameter and show metadata",
-      "description": "As a user, I want to choose graph density (auto/compact/expanded) and see how many candidates are available vs displayed.",
+      "title": "实现 GraphRAGWorkspace 工具类",
+      "description": "As a 开发者, I want to 实现 GraphRAG 工作空间管理类 so that 系统能为每本书创建、清除和查询 GraphRAG 工作空间。",
       "acceptanceCriteria": [
-        "Add density select control (auto/compact/expanded) to both graph toolbars in dashboard.html",
-        "Add currentGraphDensity() and currentDetailGraphDensity() helpers in app.js",
-        "Change loadGraph() to send density instead of limit:20",
-        "Change loadDetailGraph() to send density parameter",
-        "Show stats as '显示 24/73 人物 · 16/41 事件 · 边 180 · auto'",
-        "Wire density change events to reload graphs",
-        "Static test test_dashboard_requests_graph_density_auto passes",
-        "Typecheck passes",
-        "Verify in browser using dev-browser skill"
+        "创建 novel_system/graphrag_app/workspace.py，定义 GraphRAGWorkspace 类",
+        "实现 prepare() 方法以初始化书籍目录结构，exists() 判断工作空间，clear() 清空数据，status() 返回状态",
+        "Typecheck passes"
       ],
       "priority": 6,
       "passes": false,
@@ -104,17 +90,277 @@
     },
     {
       "id": "US-007",
-      "title": "Reduce label clutter for larger graphs",
-      "description": "As a user, I want larger graphs to show labels only on important nodes so the canvas remains readable.",
+      "title": "在服务层注入 GraphRAGWorkspace",
+      "description": "As a 开发者, I want to 在 NovelSystemService 基类中挂载 GraphRAGWorkspace 实例 so that 业务方法可以直接调度工作空间。",
       "acceptanceCriteria": [
-        "Add shouldDrawGraphLabel(node, index) function in app.js",
-        "When total nodes <= 35, always show labels",
-        "When total > 35, show labels only for: selected/hovered node, center node, top 18 characters, top 8 events",
-        "Apply to both workspace and detail graph drawing",
-        "Static test test_large_graph_label_helper_exists passes",
-        "Typecheck passes"
+        "在 novel_system/services/base.py 的 NovelSystemBase 中导入并实例化 self.graphrag_workspace",
+        "在 novel_system/service.py 中导入 GraphRAGWorkspace 以防引用报错",
+        "Typecheck passes",
+        "Tests pass"
       ],
       "priority": 7,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "实现 GraphRAGInputBuilder",
+      "description": "As a 用户, I want to 将导入的小说 TXT 分割成 GraphRAG 输入片段 so that 可以作为 GraphRAG 构建的原始 Documents 输入。",
+      "acceptanceCriteria": [
+        "创建 novel_system/graphrag_app/input_builder.py，定义 GraphRAGInputBuilder",
+        "读取原始 TXT 文件，根据章节标题分割，并将每个章节写到 graphrag/input/chapter_XXXX.txt，包含规范的注释头部",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-009",
+      "title": "在索引流程中接入 InputBuilder",
+      "description": "As a 开发者, I want to 在后台索引线程启动时触发 Input 章节分割 so that 替换掉旧 of chapter_chunks 物理构建。",
+      "acceptanceCriteria": [
+        "修改 novel_system/services/indexing.py，在 _run_book_index 中导入并调用 GraphRAGInputBuilder 分割章节",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-010",
+      "title": "实现 GraphRAGSettingsBuilder",
+      "description": "As a 开发者, I want to 动态生成 settings.yaml 配置文件 so that GraphRAG indexing 能够正确识别本地 Embedding 地址和 MiniMax API 密钥。",
+      "acceptanceCriteria": [
+        "创建 novel_system/graphrag_app/settings_builder.py，定义 GraphRAGSettingsBuilder",
+        "CRITICAL: SettingsBuilder 生成配置字段必须先核对且严格对照本地 GraphRAG 的 config schema 文件 D:/pythonProject/graphrag/packages/graphrag/graphrag/config/models/graph_rag_config.py",
+        "根据 config 读取环境变量，生成并写入 settings.yaml 到书籍 graphrag 根目录下",
+        "settings.yaml 必须包含 completion_models, embedding_models, extract_graph 等 7 类实体设置",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-011",
+      "title": "实现 PromptManager 与小说抽取提示词",
+      "description": "As a 用户, I want to 为中文长篇小说配置针对性的 GraphRAG 提示词 so that 提取的实体、关系与社区报告符合小说世界观设定。",
+      "acceptanceCriteria": [
+        "创建 novel_system/graphrag_app/prompt_manager.py",
+        "在 novel_system/graphrag_app/prompts/ 目录下创建五个 prompt 文件：entity_extraction.txt, claim_extraction.txt, community_report.txt, summarize_descriptions.txt, query_system_prompt.txt",
+        "PromptManager 能够在 prepare 时将提示词文件复制到书籍工作空间下的 prompts/ 目录",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-012",
+      "title": "实现 Subprocess Index Runner",
+      "description": "As a 开发者, I want to 调用本地 GraphRAG CLI 执行索引流程 so that 能够在隔离的子进程中安全构建索引。",
+      "acceptanceCriteria": [
+        "创建 novel_system/graphrag_app/index_runner.py，定义 GraphRAGIndexRunner",
+        "Runner 使用 subprocess.run 执行 'graphrag index --root ...'，包含环境传参和超时保护",
+        "Typecheck passes"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-013",
+      "title": "实现 TableLoader 与 TableValidator",
+      "description": "As a 开发者, I want to 加载并校验 Parquet 输出表 so that 能够保证数据完整性和对多版本文件命名的兼容性。",
+      "acceptanceCriteria": [
+        "创建 novel_system/graphrag_app/table_loader.py，支持映射 entities, relationships 等 7 类 parquet 文件名并读取为 DataFrame",
+        "创建 novel_system/graphrag_app/table_validator.py，检验这 7 个文件在 output/ 下是否全部存在且非空",
+        "Typecheck passes"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-014",
+      "title": "重构索引服务主入口",
+      "description": "As a 开发者, I want to 将 _run_book_index 完整切换为 GraphRAG 管道 so that 后台索引任务能顺序产出 Parquet 表。",
+      "acceptanceCriteria": [
+        "修改 novel_system/services/indexing.py 中的 _run_book_index() 流程，按顺序调用：prepare -> build_input -> build_settings -> run_index -> validate_tables",
+        "更新 novel_system/models.py 中的 BookInfo，增加实体数、关系数等 GraphRAG 统计字段并在索引成功后更新",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-015",
+      "title": "实现 GraphRAG Query Router",
+      "description": "As a 用户, I want to 根据提问内容自动路由至合适的查询模式 so that 能够得到最高质量和高效率的回答。",
+      "acceptanceCriteria": [
+        "创建 novel_system/graphrag_app/query_router.py，定义 GraphRAGQueryRouter",
+        "实现 route() 方法，将用户 query 路由至 'local', 'global', 'drift', 'basic' 之一",
+        "Typecheck passes"
+      ],
+      "priority": 15,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-016",
+      "title": "实现 GraphRAG Query Engine",
+      "description": "As a 开发者, I want to 调用 GraphRAG Python API 运行查询 so that 获取基于知识图谱生成的结构化搜索结果。",
+      "acceptanceCriteria": [
+        "创建 novel_system/graphrag_app/query_engine.py，定义 GraphRAGQueryEngine",
+        "CRITICAL: 编写 search() 接口前，必须核对本地 GraphRAG 安装包下 D:/pythonProject/graphrag/packages/graphrag/graphrag/api/query.py 与 D:/pythonProject/graphrag/packages/graphrag/graphrag/query/factory.py 的导出函数签名",
+        "使用 import 导入 graphrag.api.query 的 local_search 和 global_search，读取对应 parquet 执行搜索",
+        "Typecheck passes"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-017",
+      "title": "实现 AnswerAdapter 并调整模型契约",
+      "description": "As a 开发者, I want to 适配搜索响应和 API 参数契约 so that GraphRAG 能够和旧系统契约兼容。",
+      "acceptanceCriteria": [
+        "创建 novel_system/graphrag_app/answer_adapter.py，将 GraphRAG 结果（context 和 response）封装成 AskResponse 格式",
+        "修改 novel_system/models.py 中的 AskRequest 模型，废弃 scope 参数（但保留默认值兼容）并添加 search_mode 选项",
+        "Typecheck passes"
+      ],
+      "priority": 17,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-018",
+      "title": "重构问答服务并废弃剧透判定",
+      "description": "As a 用户, I want to 移除问答里的防剧透与范围限制 so that 能够进行全书主线分析与无限制提问。",
+      "acceptanceCriteria": [
+        "修改 novel_system/services/qa.py，重写 ask() 函数为 async，内部导入并调用 query_engine 和 answer_adapter",
+        "从 services/qa.py 中物理删除所有旧检索和剧透拒答等辅助逻辑",
+        "修改 novel_system/validator.py，彻底移除 SpoilerGuard，让 EvidenceGate 等校验层接收 GraphRAG 语料",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 18,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-019",
+      "title": "更新 API 路由处理器为 async",
+      "description": "As a 开发者, I want to 将 api.py 中的 ask endpoint 改为 async so that 支持并发等待 GraphRAG 查询。",
+      "acceptanceCriteria": [
+        "修改 novel_system/api.py 中的 `/api/books/{book_id}/ask` 接口，改为 `async def`，使用 `await service.ask(...)`",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 19,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-020",
+      "title": "实现 GraphProjector",
+      "description": "As a 用户, I want to 从 GraphRAG 的实体和关系表投影出前端可视化图谱 so that 可以在交互界面浏览高质量的人物与门派网络关系。",
+      "acceptanceCriteria": [
+        "创建 novel_system/graphrag_app/graph_projector.py",
+        "读取 entities.parquet 和 relationships.parquet，根据中心人物和密度过滤，投影保存为 derived/graph_view.json",
+        "Typecheck passes"
+      ],
+      "priority": 20,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-021",
+      "title": "实现 TimelineProjector",
+      "description": "As a 用户, I want to 从 GraphRAG 的协变量与文本片段投影生成时间线 so that 能够查阅小说的事件脉络。",
+      "acceptanceCriteria": [
+        "创建 novel_system/graphrag_app/timeline_projector.py",
+        "读取 covariates.parquet/text_units.parquet，转换生成并保存 derived/timeline_view.json",
+        "Typecheck passes"
+      ],
+      "priority": 21,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-022",
+      "title": "整合图谱与时间线 API 服务",
+      "description": "As a 用户, I want to 在页面上查看全新的 GraphRAG 关系图谱与事件时间线 so that 能够使用高可信度的知识视图。",
+      "acceptanceCriteria": [
+        "更新 novel_system/graph_service.py，调用 graph_projector 输出力导向图",
+        "更新 novel_system/services/stats.py，统计 GraphRAG 表行数",
+        "更新 novel_system/api.py，图谱和时间线 API 返回 GraphRAG 派生的 json 数据",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 22,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-023",
+      "title": "降级或重写续写服务",
+      "description": "As a 开发者, I want to 消除续写服务对旧 RAG 的强依赖 so that 整个系统在没有旧索引的情况下依然可以正常加载。",
+      "acceptanceCriteria": [
+        "修改 novel_system/services/continuation.py，消除对 world_rule.json, style_samples.json 等旧制品的依赖",
+        "在 continuation.py 中改为从 text_units 中抽取文风，或先执行平滑退避（降级处理）",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 23,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-024",
+      "title": "隔离旧 RAG 代码模块",
+      "description": "As a 开发者, I want to 将旧检索和旧索引文件物理搬迁到 legacy 目录 so that 保持主包的整洁性并防止无意引用。",
+      "acceptanceCriteria": [
+        "在 novel_system 下创建 legacy/old_rag/ 目录",
+        "将原 novel_system/search/ 目录，以及 retrieval.py, semantic_scorer.py, vector_store 等旧文件物理移动至 legacy/old_rag/ 下",
+        "全局扫描，确认除 legacy 目录外没有任何导入引用旧模块",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 24,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-025",
+      "title": "重建与迁移测试套件",
+      "description": "As a 开发者, I want to 废弃旧的 validator/searcher 测试并为全新的 GraphRAG App 写好 smoke tests so that 形成稳定的集成测试基础。",
+      "acceptanceCriteria": [
+        "将 tests/ 下针对 old RAG 的测试（如 test_search_orchestrator.py, test_character_registry.py）移动至 tests/legacy/",
+        "在 tests/ 下新建 graphrag_app/ 目录并创建各个组件（workspace, settings_builder, loader）的单元测试",
+        "全量运行 conda run -n chaishu python -m pytest 通过",
+        "Typecheck passes"
+      ],
+      "priority": 25,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-026",
+      "title": "改造前端交互并更新文档",
+      "description": "As a 用户, I want to 在页面上选择不同的搜索模式并去掉防剧透控件 so that 界面符合全新的小说分析定位。",
+      "acceptanceCriteria": [
+        "修改 templates/dashboard.html，添加 Search Mode（Auto/Local/Global/DRIFT/Basic）选择框，移除章节范围控制和防剧透提示",
+        "修改 static/js/main.js，配合路由发送 search_mode 参数，渲染 debug trace 里的 matched_entities",
+        "更新 README.md 与 docs/00_项目总览.md，记录 GraphRAG 架构特性",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 26,
       "passes": false,
       "notes": ""
     }

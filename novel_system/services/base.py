@@ -10,11 +10,26 @@ from ..indexing import BookIndexRepository
 from ..llm import MiniMaxClient
 from ..embedding import create_embedding_provider
 from ..planner import RuleBasedPlanner, QueryRewriter, MemoryState
-from ..semantic_scorer import SemanticScorer
+try:
+    from ..semantic_scorer import SemanticScorer
+except ImportError:
+    from ..legacy.old_rag.semantic_scorer import SemanticScorer
 from ..reranker import create_reranker
-from ..validator import AnswerValidator, ContinuationValidator, SpoilerGuard, EvidenceGate
+from ..validator import AnswerValidator, ContinuationValidator, EvidenceGate
 from ..novel_heuristics import NovelConfig
 from ..models import ConversationTurn, Scope
+from ..graphrag_app.workspace import GraphRAGWorkspace
+from ..graphrag_app.input_builder import GraphRAGInputBuilder
+from ..graphrag_app.settings_builder import GraphRAGSettingsBuilder
+from ..graphrag_app.prompt_manager import GraphRAGPromptManager
+from ..graphrag_app.index_runner import GraphRAGIndexRunner
+from ..graphrag_app.table_loader import GraphRAGTableLoader
+from ..graphrag_app.table_validator import GraphRAGTableValidator
+from ..graphrag_app.query_engine import GraphRAGQueryEngine
+from ..graphrag_app.query_router import GraphRAGQueryRouter
+from ..graphrag_app.answer_adapter import GraphRAGAnswerAdapter
+from ..graphrag_app.graph_projector import GraphRAGGraphProjector
+from ..graphrag_app.timeline_projector import GraphRAGTimelineProjector
 
 
 class NovelSystemBase:
@@ -40,8 +55,20 @@ class NovelSystemBase:
         self.evidence_gate = EvidenceGate(semantic_scorer=self.semantic_scorer)
         self.answer_validator = AnswerValidator()
         self.continuation_validator = ContinuationValidator()
-        self.spoiler_guard = SpoilerGuard()
         self.reranker = create_reranker(self.config)
+        # GraphRAG 组件
+        self.graphrag_workspace = GraphRAGWorkspace(self.config)
+        self.graphrag_input_builder = GraphRAGInputBuilder(self.config)
+        self.graphrag_settings_builder = GraphRAGSettingsBuilder(self.config)
+        self.graphrag_prompt_manager = GraphRAGPromptManager(self.config)
+        self.graphrag_index_runner = GraphRAGIndexRunner(self.config)
+        self.graphrag_table_loader = GraphRAGTableLoader(self.config)
+        self.graphrag_table_validator = GraphRAGTableValidator(self.config)
+        self.graphrag_query_engine = GraphRAGQueryEngine(self.config)
+        self.graphrag_query_router = GraphRAGQueryRouter()
+        self.graphrag_answer_adapter = GraphRAGAnswerAdapter()
+        self.graph_projector = GraphRAGGraphProjector(self.config)
+        self.timeline_projector = GraphRAGTimelineProjector(self.config)
         self._lock = threading.Lock()
         self.bootstrap_default_book()
 

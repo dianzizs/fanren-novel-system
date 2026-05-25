@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class IndexingServiceMixin:
-    """Mixin for book indexing operations."""
+    """Mixin for book indexing operations, now backed by GraphRAG."""
 
     def list_books(self) -> list[BookInfo]:
         books = []
@@ -31,6 +31,10 @@ class IndexingServiceMixin:
                     source=manifest.get("source", "local"),
                     status=manifest.get("status", "pending"),
                     index_progress=manifest.get("index_progress", 0.0),
+                    text_unit_count=manifest.get("text_unit_count", 0),
+                    entity_count=manifest.get("entity_count", 0),
+                    relationship_count=manifest.get("relationship_count", 0),
+                    community_count=manifest.get("community_count", 0),
                 )
             )
         return books
@@ -107,126 +111,83 @@ class IndexingServiceMixin:
         return {"status": "indexing", "message": "开始分析"}
 
     def _run_book_index(self, book_id: str) -> None:
-        """后台执行书籍索引，分步骤更新进度。
+        """GraphRAG indexing pipeline.
 
-        构建过程包括：
-        1. 章节解析和切片
-        2. TF-IDF 向量化
-        3. FAISS 向量索引构建（如果 embedding_provider 可用）
-        4. manifest 更新
+        1. Prepare workspace
+        2. Build input text files
+        3. Generate settings.yaml
+        4. Run GraphRAG CLI index
+        5. Validate output tables
+        6. Build derived views
         """
         try:
-            manifest = next((book for book in self.repo.list_books() if book["id"] == book_id), None)
+            self.set_book_indexing(book_id, "indexing", 0.02)
+            manifest = next((b for b in self.repo.list_books() if b["id"] == book_id), None)
             if not manifest:
                 return
             source_path = Path(manifest["source_path"])
-            title = manifest["title"]
+            title = manifest.get("title", book_id)
 
-            # Create token callback for tracking LLM usage
-            def token_callback(usage):
-                self._record_token_usage(book_id, usage)
-
-            self.set_book_indexing(book_id, "indexing", 0.05)
-            raw_text = source_path.read_text(encoding="utf-8")
-
+            self.graphrag_workspace.prepare(book_id, source_path)
             self.set_book_indexing(book_id, "indexing", 0.10)
-            chapters = self.repo._parse_chapters(raw_text)
 
-            self.repo.prewarm_llm_extractions(chapters, book_id, token_callback)
-
+            self.graphrag_input_builder.build_from_txt(book_id, source_path)
             self.set_book_indexing(book_id, "indexing", 0.20)
-            chunks = self.repo._build_chunks(chapters)
 
+            self.graphrag_prompt_manager.ensure_prompts(book_id)
+            self.graphrag_settings_builder.build(book_id)
             self.set_book_indexing(book_id, "indexing", 0.30)
-            chapter_summaries = self.repo._build_chapter_summaries(chapters)
 
-            self.set_book_indexing(book_id, "indexing", 0.40)
-            events = self.repo._build_event_timeline(chapters, chapter_summaries)
+            result = self.graphrag_index_runner.run(book_id)
+            if not result["success"]:
+                raise RuntimeError(f"GraphRAG index failed: {result.get('error', 'unknown')}")
+            self.set_book_indexing(book_id, "indexing", 0.85)
 
-            self.set_book_indexing(book_id, "indexing", 0.50)
-            character_cards = self.repo._build_character_cards(chapters, book_id, token_callback)
+            validation = self.graphrag_table_validator.validate(book_id)
+            self.set_book_indexing(book_id, "indexing", 0.90)
 
-            self.set_book_indexing(book_id, "indexing", 0.55)
-            character_registry = self.repo._build_character_registry(chapters, character_cards, book_id, token_callback)
+            table_sizes = self.graphrag_table_loader.table_sizes(book_id)
+            self.set_book_indexing(book_id, "indexing", 0.92)
 
-            self.set_book_indexing(book_id, "indexing", 0.60)
-            relationships = self.repo._build_relationships(chapters, character_cards)
-
-            self.set_book_indexing(book_id, "indexing", 0.65)
-            world_rules = self.repo._build_world_rules(chapters)
-
-            self.set_book_indexing(book_id, "indexing", 0.70)
-            canon_memory = self.repo._build_canon_memory(chapter_summaries, events)
-
-            self.set_book_indexing(book_id, "indexing", 0.75)
-            style_samples = self.repo._build_style_samples(chapters)
-
-            self.set_book_indexing(book_id, "indexing", 0.80)
-            recent_plot = self.repo._build_recent_plot_docs(chapters, chapter_summaries)
-
-            corpora = {
-                "chapter_chunks": chunks,
-                "chapter_summaries": chapter_summaries,
-                "event_timeline": events,
-                "character_card": character_cards,
-                "character_registry": character_registry,
-                "relationship_graph": relationships,
-                "world_rule": world_rules,
-                "canon_memory": canon_memory,
-                "recent_plot": recent_plot,
-                "style_samples": style_samples,
-                "vision_parse": [],
-            }
-
-            book_dir = self.repo._book_dir(book_id)
-            book_dir.mkdir(parents=True, exist_ok=True)
-            (book_dir / "chapters.json").write_text(
-                json.dumps(chapters, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-
-            self.set_book_indexing(book_id, "indexing", 0.82)
-            total = len(corpora)
-            for idx, (name, docs) in enumerate(corpora.items()):
-                (book_dir / f"{name}.json").write_text(
-                    json.dumps(docs, ensure_ascii=False, indent=2),
-                    encoding="utf-8",
-                )
-                self.set_book_indexing(book_id, "indexing", 0.82 + 0.14 * (idx / total))
-
-            for idx, (name, docs) in enumerate(corpora.items()):
-                self.repo._build_vector_payload_for_corpus(book_id, name, docs)
-                self.set_book_indexing(book_id, "indexing", 0.96 + 0.04 * (idx / total))
-
-            # 构建并保存向量索引（委托给 repo 共享方法）
-            has_vector_index = self.repo._build_vector_indexes(book_id, corpora)
+            self.graph_projector.build(book_id)
+            self.timeline_projector.build(book_id)
+            self.set_book_indexing(book_id, "indexing", 0.97)
 
             final_manifest = {
                 "id": book_id,
                 "title": title,
                 "source_path": str(source_path),
                 "source": manifest.get("source", "local"),
-                "chapter_count": len(chapters),
-                "chunk_count": len(chunks),
+                "chapter_count": manifest.get("chapter_count", 0),
+                "chunk_count": 0,
                 "indexed": True,
                 "status": "ready",
                 "indexed_at": datetime.now().isoformat(),
                 "index_progress": 1.0,
-                "has_vector_index": has_vector_index,
+                "has_vector_index": True,
+                "text_unit_count": table_sizes.get("text_units", 0),
+                "entity_count": table_sizes.get("entities", 0),
+                "relationship_count": table_sizes.get("relationships", 0),
+                "community_count": table_sizes.get("communities", 0),
             }
+            book_dir = self.repo._book_dir(book_id)
+            book_dir.mkdir(parents=True, exist_ok=True)
             (book_dir / "manifest.json").write_text(
                 json.dumps(final_manifest, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
             self.repo._cache.pop(book_id, None)
+            self.set_book_indexing(book_id, "ready", 1.0)
 
         except Exception as e:
             import sys
             print(f"[INDEX ERROR] {book_id}: {e}", file=sys.stderr, flush=True)
+            logger.exception("GraphRAG indexing failed for %s", book_id)
             manifest = next((book for book in self.repo.list_books() if book["id"] == book_id), None)
             if manifest:
                 manifest["status"] = "error"
                 self.repo.update_book_manifest(book_id, manifest)
+            self.set_book_indexing(book_id, "error", 0.0)
 
     def delete_book(self, book_id: str) -> dict[str, Any]:
         """删除书目及其关联 data"""

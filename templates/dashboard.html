@@ -17,7 +17,7 @@
           <div class="workspace-title-block">
             <h1>《{{ default_book_title }}》多视图工作台</h1>
             <p id="hero-subtitle" class="hero-copy">
-              把索引、阅读、关系图、续写和评测收进同一张桌面，适合长篇小说的拆书、问答和创作延展。
+              GraphRAG 全书分析系统 — Local Search（人物/关系） · Global Search（主题/格局） · DRIFT（因果推理） · Basic（原文定位）
             </p>
           </div>
           <div class="hero-actions">
@@ -49,13 +49,13 @@
       <div class="workflow-ribbon" aria-label="系统流程">
         <span class="workflow-title">Pipeline</span>
         <div class="workflow-steps">
-          <span>Ingest</span>
-          <span>Planner</span>
-          <span>Retrieval</span>
-          <span>Memory</span>
-          <span>Graph</span>
-          <span>Continuation</span>
-          <span>Eval</span>
+          <span>GraphRAG Index</span>
+          <span>Entities</span>
+          <span>Relationships</span>
+          <span>Communities</span>
+          <span>Local Search</span>
+          <span>Global Search</span>
+          <span>DRIFT</span>
         </div>
       </div>
     </header>
@@ -199,7 +199,18 @@
             >韩立为什么会去参加七玄门测试？</textarea>
 
             <div class="field-row">
-              <label class="field-label" for="scope-start">章节范围</label>
+              <label class="field-label" for="search-mode">搜索模式</label>
+              <select id="search-mode">
+                <option value="auto" selected>自动</option>
+                <option value="local">Local（人物/关系）</option>
+                <option value="global">Global（主题/全局）</option>
+                <option value="drift">DRIFT（因果推理）</option>
+                <option value="basic">Basic（原文定位）</option>
+              </select>
+            </div>
+
+            <div class="field-row" style="display:none">
+              <label class="field-label" for="scope-start">章节范围（已废弃）</label>
               <div class="inline-fields">
                 <input id="scope-start" type="number" value="1" min="1" />
                 <span>至</span>

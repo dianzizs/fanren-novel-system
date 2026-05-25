@@ -24,3 +24,9 @@ class TestConfidenceField:
             scope=Scope(),
         )
         assert response.confidence == "high"
+
+
+def test_spoiler_guard_is_not_part_of_active_validator_api():
+    import novel_system.validator as validator_module
+
+    assert not hasattr(validator_module, "SpoilerGuard")

@@ -1,29 +1,35 @@
-# NovelQA System
+# NovelQA System — GraphRAG 全书分析系统
 
-一个基于 FastAPI 构建的通用中文小说问答系统，支持任意长篇小说的智能分析。系统提供智能问答、情节续写、人物关系图谱可视化等功能。
+基于 Microsoft GraphRAG v3 构建的中文长篇小说全书分析系统。支持实体抽取、关系图谱、社区发现、多模式检索。
+
+> **GraphRAG Migration Notice**: 本项目已从旧混合检索架构（TF-IDF + FAISS + 规则匹配）迁移到 Microsoft GraphRAG v3 结构。
+> 旧 RAG 模块移至 `novel_system/legacy/` 作为参考，不在主链路使用。
 
 ## 功能特性
 
 ### 核心功能
-- **智能问答**: 基于章节内容进行语义检索，提供准确的问题回答
-- **情节续写**: 基于原著风格和人物设定进行续写
-- **人物卡片**: 自动提取人物信息，生成详细人物卡
-- **时间线**: 梳理情节发展，生成时间线视图
-- **关系图谱**: 可视化人物关系网络，支持力导向图交互
-- **摘要生成**: 自动生成章节摘要和情节概括
+- **GraphRAG 索引**: documents → text_units → entities → relationships → communities → community_reports
+- **Local Search**: 人物、物品、功法、地点、关系类问题
+- **Global Search**: 主题、主线、势力格局、人物群像
+- **DRIFT Search**: 复杂因果、多跳推理、人物动机
+- **Basic Search**: 原文片段定位
+- **派生图谱**: 从 GraphRAG entities/relationships 生成力导向图
+- **派生时间线**: 从 GraphRAG covariates/text_units 生成时间线
 
 ### 技术特性
-- **混合检索**: 结合 TF-IDF 语义搜索与规则匹配
-- **查询重写**: 自动扩展别名、消解指代、提取上下文
-- **范围限制**: 支持章节范围查询，防止剧透
-- **风格保持**: 保持原著语言风格进行续写和回答
-- **评测系统**: 集成评测脚本与可视化 Dashboard
+- **GraphRAG v3.0.9**: Microsoft 官方知识图谱管道
+- **多模式检索**: Local / Global / DRIFT / Basic 四种搜索模式
+- **实体类型**: person / organization / location / event / item / technique / rule
+- **离线 Embedding**: 本地 OpenAI-compatible embedding server
+- **LLM**: MiniMax via LiteLLM (OpenAI-compatible API)
 
 ## 快速开始
 
 ### 环境要求
-- Python 3.9+
-- pip
+- Python >=3.11,<3.14
+- conda 环境: `chaishu`
+- Microsoft GraphRAG v3.0.9（已通过 editable install 安装）
+- 本地 Embedding server (http://localhost:8000/v1)
 
 ### 安装依赖
 
@@ -45,6 +51,14 @@ copy .env.example .env
 MINIMAX_API_KEY=your_api_key_here
 MINIMAX_BASE_URL=https://api.minimax.chat/v1
 MINIMAX_CHAT_MODEL=MiniMax-m2.7-HighSpeed
+
+# GraphRAG 配置
+GRAPHRAG_INDEX_TIMEOUT_SEC=7200
+GRAPHRAG_CHAT_MODEL=MiniMax-m2.7-HighSpeed
+GRAPHRAG_CHAT_API_BASE=https://api.minimax.chat/v1
+GRAPHRAG_API_KEY=${MINIMAX_API_KEY}
+GRAPHRAG_EMBEDDING_MODEL=Qwen/Qwen3-Embedding-4B
+GRAPHRAG_EMBEDDING_API_BASE=http://localhost:8000/v1
 
 # 默认书籍配置（可修改）
 DEFAULT_BOOK_ID=default-book
@@ -83,36 +97,41 @@ python scripts/run_eval.py
 ## 项目结构
 
 ```
-novelqa-system/
-├── novel_system/          # 核心模块
-│   ├── __init__.py
-│   ├── api.py            # FastAPI 应用和路由
-│   ├── config.py         # 配置管理
-│   ├── indexing.py       # 索引与中间产物构建
-│   ├── llm.py            # LLM 客户端封装
-│   ├── models.py         # 数据模型定义
-│   ├── planner.py        # 查询规划和重写
-│   ├── retrieval.py      # 混合检索引擎
-│   ├── service.py        # 核心业务逻辑
-│   ├── tracing.py        # 追踪日志基础设施
-│   ├── validator.py      # 验证层（证据门控、答案验证、剧透防护）
-│   ├── semantic_scorer.py # 语义相关性评分
-│   ├── novel_heuristics.py  # 小说特定规则（可选）
-│   └── utils/
-│       └── text_utils.py # 共享文本处理工具
-├── scripts/              # 脚本工具
-│   ├── build_index.py    # 索引构建脚本
-│   ├── run_api.py        # API 启动脚本
-│   └── run_eval.py       # 评估脚本
-├── static/               # 前端静态文件
-│   ├── app.js           # 前端交互逻辑
-│   └── styles.css       # 样式表
-├── templates/            # HTML 模板
-│   └── dashboard.html    # 主页面
-├── tests/               # 测试文件
-└── data/                # 数据目录
-    ├── books/          # 小说文本文件
-    └── runtime/        # 运行时数据（索引、缓存）
+fanren-novel-system/
+├── novel_system/
+│   ├── graphrag_app/        # GraphRAG 应用层（核心）
+│   │   ├── workspace.py     # 工作区生命周期管理
+│   │   ├── input_builder.py # TXT -> GraphRAG input/*.txt
+│   │   ├── settings_builder.py  # 生成 settings.yaml
+│   │   ├── prompt_manager.py    # 小说领域 Prompt 管理
+│   │   ├── index_runner.py      # CLI subprocess 索引执行
+│   │   ├── table_loader.py      # Parquet 表加载与别名映射
+│   │   ├── table_validator.py   # 输出表完整性校验
+│   │   ├── query_router.py      # local/global/drift/basic 路由
+│   │   ├── query_engine.py      # GraphRAG Python API 查询入口
+│   │   ├── answer_adapter.py    # GraphRAG 结果 -> AskResponse
+│   │   ├── graph_projector.py   # entities/relationships -> 前端图谱
+│   │   ├── timeline_projector.py # covariates/text_units -> 时间线
+│   │   └── debug_dump.py        # 调试输出
+│   ├── services/            # 业务服务层
+│   │   ├── indexing.py      # GraphRAG 索引编排
+│   │   ├── qa.py            # GraphRAG 查询入口
+│   │   ├── continuation.py  # 续写（迁移中降级）
+│   │   └── stats.py         # 统计
+│   ├── legacy/              # 旧 RAG 模块（参考）
+│   ├── api.py               # FastAPI 路由
+│   ├── config.py            # 配置管理
+│   ├── models.py            # 数据模型
+│   └── validator.py         # 验证层
+├── static/                  # 前端
+├── templates/               # HTML 模板
+├── tests/graphrag_app/      # GraphRAG 测试
+└── data/books/{book_id}/graphrag/
+    ├── input/               # 章节 TXT
+    ├── settings.yaml        # GraphRAG 配置
+    ├── prompts/             # 小说领域 Prompt
+    ├── output/              # Parquet 表
+    └── derived/             # 前端视图（graph_view.json, timeline_view.json）
 ```
 
 ## API 文档
@@ -123,26 +142,26 @@ novelqa-system/
 
 ### 主要端点
 
-#### `POST /api/ask`
-智能问答
+#### `POST /api/books/{book_id}/ask`
+GraphRAG 智能问答
 
 ```json
 {
   "user_query": "主角是怎么得到关键道具的？",
-  "scope": {"chapters": [1, 50]},
+  "search_mode": "auto",
   "conversation_history": [],
-  "top_k": 6
+  "debug": false
 }
 ```
 
-#### `POST /api/continue`
-情节续写
+search_mode 选项: `auto` | `local` | `global` | `drift` | `basic`
+
+#### `POST /api/books/{book_id}/continue`
+情节续写（GraphRAG 迁移中，当前返回降级提示）
 
 ```json
 {
-  "user_query": "主角进入门派后的第一次历练",
-  "scope": {"chapters": [1, 100]},
-  "desired_length": [500, 1000]
+  "user_query": "主角进入门派后的第一次历练"
 }
 ```
 
@@ -201,7 +220,7 @@ curl -X POST "http://localhost:8000/api/books/{book_id}/ask" \
 1. **Evidence Gate**: 检测检索结果是否足以回答问题，不足时返回拒答
 2. **Answer Validator**: 评估回答与证据的一致性
 3. **Continuation Validator**: 检查续写内容的人物一致性和世界观合规性
-4. **Spoiler Guard**: 自动检测并处理超出查询范围的剧透内容
+4. **GraphRAG Table Validator**: 验证索引输出表完整性
 
 ## 人物关系图谱
 
@@ -250,9 +269,11 @@ RetrievalTarget = Literal[
 
 - **后端**: FastAPI
 - **前端**: HTML5 Canvas + Vanilla JavaScript
-- **检索**: TF-IDF 语义检索
-- **LLM**: MiniMax API
-- **数据存储**: 本地文件系统
+- **知识图谱**: Microsoft GraphRAG v3.0.9
+- **检索模式**: Local / Global / DRIFT / Basic Search
+- **LLM**: MiniMax via LiteLLM
+- **Embedding**: Qwen3-Embedding-4B (local server)
+- **数据存储**: Parquet + 本地文件系统
 
 ## 更新日志
 

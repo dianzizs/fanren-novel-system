@@ -1,237 +1,368 @@
 {
   "project": "小王一号",
-  "branchName": "ralph/frontend-light-professional-redesign",
-  "description": "前端重构：渐进式模块化与明亮专业设计系统 — 将暗黑色系替换为 Linear/Stripe 风格的明亮专业 UI，并将 app.js 拆分为原生 ESM 模块",
+  "branchName": "ralph/graphrag-migration",
+  "description": "Microsoft GraphRAG 架构迁移：将原有 RAG 主链路与防剧透机制重构为以 GraphRAG 为核心的中文长篇小说分析系统",
   "userStories": [
     {
       "id": "US-001",
-      "title": "创建 CSS Design Tokens (variables.css)",
-      "description": "As a 前端开发者, I want to 建立明亮专业设计系统的核心变量文件 so that 所有后续样式都基于统一的 Design Tokens。",
+      "title": "本地 GraphRAG 源码审计与验证",
+      "description": "As a 开发者, I want to 审计本地 GraphRAG 安装 so that 确认其版本、CLI 命令以及 API 导出路径是否与迁移设计完全一致。",
       "acceptanceCriteria": [
-        "创建 static/css/variables.css",
-        "定义 :root 下所有 CSS 变量：--bg, --bg-elevated, --panel, --panel-strong, --surface, --surface-strong, --text, --muted, --subtle, --accent, --accent-hover, --accent-light, --accent-strong, --accent-warm, --line, --line-strong, --shadow, --radius-lg, --radius-md, --radius-sm, --font-sans, --font-serif, --font-mono, --ease-out",
-        "变量值与 PRD 规范一致（--bg: #f8fafc, --accent: #2563eb 等）",
-        "文件可被浏览器正常加载无语法错误"
+        "创建 scripts/audit_graphrag_local.py",
+        "脚本运行并成功输出：确认 GraphRAG 版本为 v3.0.9、确认 monorepo 结构、并打印主包 packages/graphrag/graphrag/ 的实际安装路径",
+        "运行 python -c 'import graphrag' 成功无报错",
+        "创建 docs/GraphRAG本地源码审计.md，记录 packages/graphrag/graphrag/ 内的 api/index.py, api/query.py, config/init_content.py, query/factory.py 的实际结构与参数",
+        "Typecheck passes"
       ],
       "priority": 1,
-      "passes": true,
-      "notes": "Created static/css/variables.css with all 24+ CSS variables using Linear/Stripe bright design tokens (--bg: #f8fafc, --accent: #2563eb). Also added status color variables."
+      "passes": false,
+      "notes": ""
     },
     {
       "id": "US-002",
-      "title": "创建全局基础样式 (base.css)",
-      "description": "As a 用户, I want to 看到干净明亮的页面底色和专业排版 so that 长时间阅读不疲劳。",
+      "title": "验证本地 Embedding 与 MiniMax 服务",
+      "description": "As a 开发者, I want to 验证本地 Embedding 接口和 MiniMax API so that 确保后续索引与搜索不会因网络与密钥问题报错中断。",
       "acceptanceCriteria": [
-        "创建 static/css/base.css",
-        "移除所有暗黑色系、星空/流光特效相关样式",
-        "body 背景设为 var(--bg)，文字色 var(--text)",
-        "排版使用 font-variant-ligatures 优化",
-        "自定义滚动条：宽 6px，淡灰色轨道，悬停变暗",
-        "包含 box-sizing: border-box 全局重置",
-        "文件无 CSS 语法错误"
+        "创建 scripts/verify_embedding_server.py",
+        "向本地 Embedding 服务 http://localhost:8000/v1/embeddings 发送测试向量化请求并成功打印返回维度",
+        "向 MiniMax 大模型接口发送聊天请求，验证 API 密钥有效性并打印返回结果",
+        "Typecheck passes"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Created static/css/base.css with Inter font import, light color scheme, clean typography, 6px scrollbar, box-sizing reset, sr-only utility class."
+      "passes": false,
+      "notes": ""
     },
     {
       "id": "US-003",
-      "title": "创建布局样式 (layout.css)",
-      "description": "As a 用户, I want to 看到宽屏响应式布局和粘性导航栏 so that 界面有清晰的空间秩序。",
+      "title": "工作区冻结与迁移风险清单",
+      "description": "As a 开发者, I want to 冻结当前工作区并添加迁移声明 so that 不会在迁移期间引入无关的修改干扰开发。",
       "acceptanceCriteria": [
-        "创建 static/css/layout.css",
-        "App Shell 最大宽度 1480px，两侧 padding 24px",
-        "Tab Bar 为 sticky 定位，纯白底 + backdrop-filter 磨砂效果，底边框 1px solid var(--line)",
-        "面板使用纯白填充 + 浅灰微边框 + var(--shadow) 投影",
-        "去除所有发光炫彩边框样式",
-        "文件无 CSS 语法错误"
+        "创建 docs/GraphRAG迁移风险清单.md 与 docs/GraphRAG迁移执行记录.md",
+        "在 README.md 顶部新增 Migration Notice，声明正在往 Microsoft GraphRAG v3 迁移，旧 RAG 正式冻结并进入 legacy",
+        "Typecheck passes",
+        "Tests pass"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "Created static/css/layout.css with App Shell 1480px max-width, sticky tab bar with backdrop-filter blur, white panels with subtle borders, responsive breakpoints at 1280/1100/720/520px."
+      "passes": false,
+      "notes": ""
     },
     {
       "id": "US-004",
-      "title": "创建组件样式 (components.css)",
-      "description": "As a 用户, I want to 使用风格统一的按钮、输入框和状态标签 so that 交互元素专业一致。",
+      "title": "配置与依赖更新",
+      "description": "As a 开发者, I want to 更新依赖和配置 so that 系统能够支持 GraphRAG 所需的环境变量与第三方库。",
       "acceptanceCriteria": [
-        "创建 static/css/components.css",
-        ".primary 按钮：蓝底白字，hover 加深，active 下沉",
-        ".secondary 按钮：无色底 + 细灰边框，hover 淡灰",
-        "输入框/textarea：白底 + 1px var(--line) 边框，focus 时蓝色边框 + 外发光",
-        "状态标签：就绪=浅蓝底蓝字，等待=浅黄底黄字，报错=淡红底红字",
-        "文件无 CSS 语法错误"
+        "在 requirements.txt 中添加 pandas>=2.0, pyarrow>=14.0, pyyaml>=6.0",
+        "在 novel_system/config.py 的 AppConfig 中增加 graphrag_workspace_name, graphrag_chat_model, graphrag_embedding_model 等字段",
+        "在 .env.example 中同步增加 GRAPHRAG_* 相关的配置字段",
+        "Typecheck passes",
+        "Tests pass"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "Created static/css/components.css with primary (blue #2563eb) and secondary (white + gray border) buttons, input/textarea with blue focus ring, status tags (ready=blue, pending=yellow, error=red), progress bars, feedback cards, confirm dialog."
+      "passes": false,
+      "notes": ""
     },
     {
       "id": "US-005",
-      "title": "创建功能区样式 (features.css)",
-      "description": "As a 用户, I want to 在藏书卡片、阅读台、图谱、续写台和评测看板中看到明亮专业的视觉呈现 so that 各功能区美观且可读性高。",
+      "title": "创建 graphrag_app 包和路径工具",
+      "description": "As a 开发者, I want to 建立 GraphRAG 模块目录和路径辅助工具 so that 各个组件可以统一解析 workspace 路径。",
       "acceptanceCriteria": [
-        "创建 static/css/features.css",
-        "藏书卡片：明亮独立容器，章节/词数用 var(--muted) 小字，删除图标 hover 变红",
-        "阅读台三栏：左侧目录淡灰底 + 激活项蓝色边线，中间正文纯白底 + font-serif 17px 行高 1.85，右侧问答区卡片式",
-        "Canvas 图谱容器：浅白网格背景",
-        "续写台与评测看板：卡片解耦，数据对比双列排列",
-        "文件无 CSS 语法错误"
+        "创建目录 novel_system/graphrag_app/",
+        "创建 novel_system/graphrag_app/__init__.py 作为空包入口",
+        "创建 novel_system/graphrag_app/paths.py，包含 book_root, graphrag_root, derived_dir, graphrag_settings_path 等路径解析纯函数",
+        "Typecheck passes"
       ],
       "priority": 5,
-      "passes": true,
-      "notes": "Created static/css/features.css with book cards (white, blue hover/active), reader 3-column layout (sidebar + serif 17px content + Q&A panel), graph stage with CSS grid background, continuation/evaluation in 2-column grid, detail view styles, responsive collapse."
+      "passes": false,
+      "notes": ""
     },
     {
       "id": "US-006",
-      "title": "重构 styles.css 为统一导入入口",
-      "description": "As a 前端开发者, I want to 将 styles.css 改为仅导入 5 个子样式表 so that 样式系统模块化且易维护。",
+      "title": "实现 GraphRAGWorkspace 工具类",
+      "description": "As a 开发者, I want to 实现 GraphRAG 工作空间管理类 so that 系统能为每本书创建、清除和查询 GraphRAG 工作空间。",
       "acceptanceCriteria": [
-        "styles.css 内容替换为 5 行 @import 语句",
-        "导入顺序：variables.css -> base.css -> layout.css -> components.css -> features.css",
-        "移除 styles.css 中所有原有样式代码",
-        "浏览器加载页面时所有样式正常生效",
-        "Verify in browser using dev-browser skill"
+        "创建 novel_system/graphrag_app/workspace.py，定义 GraphRAGWorkspace 类",
+        "实现 prepare() 方法以初始化书籍目录结构，exists() 判断工作空间，clear() 清空数据，status() 返回状态",
+        "Typecheck passes"
       ],
       "priority": 6,
-      "passes": true,
-      "notes": "Replaced styles.css with 5 @import statements in correct dependency order. All original styles moved to modular CSS files. Server returns 200 for all CSS files."
+      "passes": false,
+      "notes": ""
     },
     {
       "id": "US-007",
-      "title": "创建 API 封装模块 (api.js)",
-      "description": "As a 前端开发者, I want to 将所有 fetch 调用集中到 api.js so that 接口层统一且可复用。",
+      "title": "在服务层注入 GraphRAGWorkspace",
+      "description": "As a 开发者, I want to 在 NovelSystemService 基类中挂载 GraphRAGWorkspace 实例 so that 业务方法可以直接调度工作空间。",
       "acceptanceCriteria": [
-        "创建 static/js/api.js",
-        "导出 request(url, options) 底层封装函数，处理超时和非 200 响应",
-        "导出 getBooks, importBook, deleteBook, indexBook, getReaderPayload, askQuestion, generateContinuation, getGraphData 等异步函数",
-        "所有函数使用 export 关键字导出",
-        "文件为合法的 ES Module 语法"
+        "在 novel_system/services/base.py 的 NovelSystemBase 中导入并实例化 self.graphrag_workspace",
+        "在 novel_system/service.py 中导入 GraphRAGWorkspace 以防引用报错",
+        "Typecheck passes",
+        "Tests pass"
       ],
       "priority": 7,
-      "passes": true,
-      "notes": "Created static/js/api.js with request() base function (AbortController timeout), plus named exports: getBooks, importBook, deleteBook, indexBook, getBookStatus, getReaderPayload, askQuestion, generateContinuation, getGraphData, getDashboard, getStorageStats, getTokenStats, getArtifacts, getArtifact."
+      "passes": false,
+      "notes": ""
     },
     {
       "id": "US-008",
-      "title": "创建藏书模块 (library.js)",
-      "description": "As a 用户, I want to 在藏书页导入、查看和删除书籍 so that 我能管理我的小说库。",
+      "title": "实现 GraphRAGInputBuilder",
+      "description": "As a 用户, I want to 将导入的小说 TXT 分割成 GraphRAG 输入片段 so that 可以作为 GraphRAG 构建的原始 Documents 输入。",
       "acceptanceCriteria": [
-        "创建 static/js/library.js",
-        "导出 initLibrary(appState) 函数",
-        "绑定导入按钮事件，调用 api.importBook()",
-        "渲染书籍卡片 DOM（封面文字、章节数、状态、操作按钮）",
-        "支持索引进度轮询和进度条渲染",
-        "从 api.js 正确 import 所需函数",
-        "文件为合法的 ES Module 语法"
+        "创建 novel_system/graphrag_app/input_builder.py，定义 GraphRAGInputBuilder",
+        "读取原始 TXT 文件，根据章节标题分割，并将每个章节写到 graphrag/input/chapter_XXXX.txt，包含规范的注释头部",
+        "Typecheck passes"
       ],
       "priority": 8,
-      "passes": true,
-      "notes": "Created static/js/library.js exporting initLibrary, loadBooks, startBookIndex, rebuildIndex, loadStorageStatsUI, loadTokenStatsUI. Handles book cards, delete confirm dialog, import file picker, index polling."
+      "passes": false,
+      "notes": ""
     },
     {
       "id": "US-009",
-      "title": "创建阅读台模块 (reader.js)",
-      "description": "As a 用户, I want to 阅读章节正文并进行证据问答 so that 我能深入理解小说内容。",
+      "title": "在索引流程中接入 InputBuilder",
+      "description": "As a 开发者, I want to 在后台索引线程启动时触发 Input 章节分割 so that 替换掉旧 of chapter_chunks 物理构建。",
       "acceptanceCriteria": [
-        "创建 static/js/reader.js",
-        "导出 initReader(appState) 函数",
-        "章节目录点击切换高亮并加载正文和摘要",
-        "证据问答：调用 api.askQuestion()，渲染答案卡片和证据列表",
-        "证据按置信度排序，点击可高亮对应正文区域",
-        "从 api.js 正确 import 所需函数",
-        "文件为合法的 ES Module 语法"
+        "修改 novel_system/services/indexing.py，在 _run_book_index 中导入并调用 GraphRAGInputBuilder 分割章节",
+        "Typecheck passes",
+        "Tests pass"
       ],
       "priority": 9,
-      "passes": true,
-      "notes": "Created static/js/reader.js exporting initReader, loadReader. Handles chapter tree click/keyboard navigation, summary/content rendering, character cards, timeline, evidence Q&A with ask button."
+      "passes": false,
+      "notes": ""
     },
     {
       "id": "US-010",
-      "title": "创建知识图谱模块 (graph.js)",
-      "description": "As a 用户, I want to 在 Canvas 上查看人物关系图谱并交互 so that 我能直观理解角色关系。",
+      "title": "实现 GraphRAGSettingsBuilder",
+      "description": "As a 开发者, I want to 动态生成 settings.yaml 配置文件 so that GraphRAG indexing 能够正确识别本地 Embedding 地址和 MiniMax API 密钥。",
       "acceptanceCriteria": [
-        "创建 static/js/graph.js",
-        "导出 initGraph(appState) 函数",
-        "Canvas 初始化支持高分屏（devicePixelRatio）",
-        "实现缩放（Wheel）和平移（Drag）事件",
-        "节点点击检测并渲染节点详情到右侧栏",
-        "从 api.js 正确 import getGraphData",
-        "文件为合法的 ES Module 语法"
+        "创建 novel_system/graphrag_app/settings_builder.py，定义 GraphRAGSettingsBuilder",
+        "CRITICAL: SettingsBuilder 生成配置字段必须先核对且严格对照本地 GraphRAG 的 config schema 文件 D:/pythonProject/graphrag/packages/graphrag/graphrag/config/models/graph_rag_config.py",
+        "根据 config 读取环境变量，生成并写入 settings.yaml 到书籍 graphrag 根目录下",
+        "settings.yaml 必须包含 completion_models, embedding_models, extract_graph 等 7 类实体设置",
+        "Typecheck passes"
       ],
       "priority": 10,
-      "passes": true,
-      "notes": "Created static/js/graph.js exporting initGraph, loadGraph, resizeGraphCanvas. Full force-directed layout with repulsion/spring simulation, high-DPI canvas, drag-to-move nodes, click-to-select detail panel, character options dropdown."
+      "passes": false,
+      "notes": ""
     },
     {
       "id": "US-011",
-      "title": "创建续写台模块 (continuation.js)",
-      "description": "As a 用户, I want to 执行约束续写并查看剧透检测结果 so that 我能安全地生成后续内容。",
+      "title": "实现 PromptManager 与小说抽取提示词",
+      "description": "As a 用户, I want to 为中文长篇小说配置针对性的 GraphRAG 提示词 so that 提取的实体、关系与社区报告符合小说世界观设定。",
       "acceptanceCriteria": [
-        "创建 static/js/continuation.js",
-        "导出 initContinuation(appState) 函数",
-        "绑定续写按钮，调用 api.generateContinuation()",
-        "动态展现生成文本到结果容器",
-        "剧透/一致性验证未通过时显示红色警告横幅",
-        "从 api.js 正确 import generateContinuation",
-        "文件为合法的 ES Module 语法"
+        "创建 novel_system/graphrag_app/prompt_manager.py",
+        "在 novel_system/graphrag_app/prompts/ 目录下创建五个 prompt 文件：entity_extraction.txt, claim_extraction.txt, community_report.txt, summarize_descriptions.txt, query_system_prompt.txt",
+        "PromptManager 能够在 prepare 时将提示词文件复制到书籍工作空间下的 prompts/ 目录",
+        "Typecheck passes"
       ],
       "priority": 11,
-      "passes": true,
-      "notes": "Created static/js/continuation.js exporting initContinuation. Binds continue button, calls generateContinuation API, displays result in container with loading states."
+      "passes": false,
+      "notes": ""
     },
     {
       "id": "US-012",
-      "title": "创建评测模块 (evaluation.js)",
-      "description": "As a 用户, I want to 查看评测结果的对比卡片和指标可视化 so that 我能评估生成质量。",
+      "title": "实现 Subprocess Index Runner",
+      "description": "As a 开发者, I want to 调用本地 GraphRAG CLI 执行索引流程 so that 能够在隔离的子进程中安全构建索引。",
       "acceptanceCriteria": [
-        "创建 static/js/evaluation.js",
-        "导出 initEvaluation(appState) 函数",
-        "读取 /api/dashboard 评测数据",
-        "Baseline 与当前生成内容用对比卡片并排呈现",
-        "指标转换为带柱状图的小卡片（如 Groundedness: 89%）",
-        "从 api.js 正确 import 所需函数",
-        "文件为合法的 ES Module 语法"
+        "创建 novel_system/graphrag_app/index_runner.py，定义 GraphRAGIndexRunner",
+        "Runner 使用 subprocess.run 执行 'graphrag index --root ...'，包含环境传参和超时保护",
+        "Typecheck passes"
       ],
       "priority": 12,
-      "passes": true,
-      "notes": "Created static/js/evaluation.js exporting initEvaluation, loadDashboard. Renders metric cards with monospace values, baseline comparison items, failure cards, raw chart JSON."
+      "passes": false,
+      "notes": ""
     },
     {
       "id": "US-013",
-      "title": "创建主入口模块 (main.js) 并接入 HTML",
-      "description": "As a 前端开发者, I want to 用 main.js 统一调度所有子模块并更新 HTML 引用 so that 模块化系统完整运行。",
+      "title": "实现 TableLoader 与 TableValidator",
+      "description": "As a 开发者, I want to 加载并校验 Parquet 输出表 so that 能够保证数据完整性和对多版本文件命名的兼容性。",
       "acceptanceCriteria": [
-        "创建 static/js/main.js",
-        "维护 appState 全局状态对象（activeBookId, activeChapterNum, activeTab, globalLoading）",
-        "绑定 Tab 切换逻辑，处理 aria 属性和 hidden 属性",
-        "DOMContentLoaded 时依次调用 initLibrary, initReader, initGraph, initContinuation, initEvaluation",
-        "修改 dashboard.html：将 script 标签改为 <script type=\"module\" src=\"/static/js/main.js\"></script>",
-        "原 app.js 内容清空或保留为空文件",
-        "页面加载无 JS 报错，Tab 切换正常工作",
-        "Verify in browser using dev-browser skill"
+        "创建 novel_system/graphrag_app/table_loader.py，支持映射 entities, relationships 等 7 类 parquet 文件名并读取为 DataFrame",
+        "创建 novel_system/graphrag_app/table_validator.py，检验这 7 个文件在 output/ 下是否全部存在且非空",
+        "Typecheck passes"
       ],
       "priority": 13,
-      "passes": true,
-      "notes": "Created static/js/main.js with appState object, hash router, tab switching, detail view (book detail, artifacts, detail graph). Updated dashboard.html script tag to type=module. app.js preserved as-is for backward compatibility."
+      "passes": false,
+      "notes": ""
     },
     {
       "id": "US-014",
-      "title": "端到端集成验证",
-      "description": "As a 开发者, I want to 确认重构后所有功能正常运行 so that 不引入回归问题。",
+      "title": "重构索引服务主入口",
+      "description": "As a 开发者, I want to 将 _run_book_index 完整切换为 GraphRAG 管道 so that 后台索引任务能顺序产出 Parquet 表。",
       "acceptanceCriteria": [
-        "conda run -n chaishu python -m pytest 全部通过",
-        "启动服务后页面背景为冷灰 #f8fafc，面板为纯白",
-        "藏书页刷新书库和同步看板功能正常",
-        "阅读台章节切换、正文加载、证据问答正常",
-        "知识图谱 Canvas 渲染、缩放、平移、节点点击正常",
-        "续写台生成和剧透检测正常",
-        "浏览器控制台无 JS 错误",
-        "Verify in browser using dev-browser skill"
+        "修改 novel_system/services/indexing.py 中的 _run_book_index() 流程，按顺序调用：prepare -> build_input -> build_settings -> run_index -> validate_tables",
+        "更新 novel_system/models.py 中的 BookInfo，增加实体数、关系数等 GraphRAG 统计字段并在索引成功后更新",
+        "Typecheck passes",
+        "Tests pass"
       ],
       "priority": 14,
-      "passes": true,
-      "notes": "342 tests passed (294.84s). Server starts OK, dashboard returns 200. All CSS files (5 modules) and JS files (8 modules) served correctly with 200 status. HTML correctly references styles.css and type=module main.js."
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-015",
+      "title": "实现 GraphRAG Query Router",
+      "description": "As a 用户, I want to 根据提问内容自动路由至合适的查询模式 so that 能够得到最高质量和高效率的回答。",
+      "acceptanceCriteria": [
+        "创建 novel_system/graphrag_app/query_router.py，定义 GraphRAGQueryRouter",
+        "实现 route() 方法，将用户 query 路由至 'local', 'global', 'drift', 'basic' 之一",
+        "Typecheck passes"
+      ],
+      "priority": 15,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-016",
+      "title": "实现 GraphRAG Query Engine",
+      "description": "As a 开发者, I want to 调用 GraphRAG Python API 运行查询 so that 获取基于知识图谱生成的结构化搜索结果。",
+      "acceptanceCriteria": [
+        "创建 novel_system/graphrag_app/query_engine.py，定义 GraphRAGQueryEngine",
+        "CRITICAL: 编写 search() 接口前，必须核对本地 GraphRAG 安装包下 D:/pythonProject/graphrag/packages/graphrag/graphrag/api/query.py 与 D:/pythonProject/graphrag/packages/graphrag/graphrag/query/factory.py 的导出函数签名",
+        "使用 import 导入 graphrag.api.query 的 local_search 和 global_search，读取对应 parquet 执行搜索",
+        "Typecheck passes"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-017",
+      "title": "实现 AnswerAdapter 并调整模型契约",
+      "description": "As a 开发者, I want to 适配搜索响应和 API 参数契约 so that GraphRAG 能够和旧系统契约兼容。",
+      "acceptanceCriteria": [
+        "创建 novel_system/graphrag_app/answer_adapter.py，将 GraphRAG 结果（context 和 response）封装成 AskResponse 格式",
+        "修改 novel_system/models.py 中的 AskRequest 模型，废弃 scope 参数（但保留默认值兼容）并添加 search_mode 选项",
+        "Typecheck passes"
+      ],
+      "priority": 17,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-018",
+      "title": "重构问答服务并废弃剧透判定",
+      "description": "As a 用户, I want to 移除问答里的防剧透与范围限制 so that 能够进行全书主线分析与无限制提问。",
+      "acceptanceCriteria": [
+        "修改 novel_system/services/qa.py，重写 ask() 函数为 async，内部导入并调用 query_engine 和 answer_adapter",
+        "从 services/qa.py 中物理删除所有旧检索和剧透拒答等辅助逻辑",
+        "修改 novel_system/validator.py，彻底移除 SpoilerGuard，让 EvidenceGate 等校验层接收 GraphRAG 语料",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 18,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-019",
+      "title": "更新 API 路由处理器为 async",
+      "description": "As a 开发者, I want to 将 api.py 中的 ask endpoint 改为 async so that 支持并发等待 GraphRAG 查询。",
+      "acceptanceCriteria": [
+        "修改 novel_system/api.py 中的 `/api/books/{book_id}/ask` 接口，改为 `async def`，使用 `await service.ask(...)`",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 19,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-020",
+      "title": "实现 GraphProjector",
+      "description": "As a 用户, I want to 从 GraphRAG 的实体和关系表投影出前端可视化图谱 so that 可以在交互界面浏览高质量的人物与门派网络关系。",
+      "acceptanceCriteria": [
+        "创建 novel_system/graphrag_app/graph_projector.py",
+        "读取 entities.parquet 和 relationships.parquet，根据中心人物和密度过滤，投影保存为 derived/graph_view.json",
+        "Typecheck passes"
+      ],
+      "priority": 20,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-021",
+      "title": "实现 TimelineProjector",
+      "description": "As a 用户, I want to 从 GraphRAG 的协变量与文本片段投影生成时间线 so that 能够查阅小说的事件脉络。",
+      "acceptanceCriteria": [
+        "创建 novel_system/graphrag_app/timeline_projector.py",
+        "读取 covariates.parquet/text_units.parquet，转换生成并保存 derived/timeline_view.json",
+        "Typecheck passes"
+      ],
+      "priority": 21,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-022",
+      "title": "整合图谱与时间线 API 服务",
+      "description": "As a 用户, I want to 在页面上查看全新的 GraphRAG 关系图谱与事件时间线 so that 能够使用高可信度的知识视图。",
+      "acceptanceCriteria": [
+        "更新 novel_system/graph_service.py，调用 graph_projector 输出力导向图",
+        "更新 novel_system/services/stats.py，统计 GraphRAG 表行数",
+        "更新 novel_system/api.py，图谱和时间线 API 返回 GraphRAG 派生的 json 数据",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 22,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-023",
+      "title": "降级或重写续写服务",
+      "description": "As a 开发者, I want to 消除续写服务对旧 RAG 的强依赖 so that 整个系统在没有旧索引的情况下依然可以正常加载。",
+      "acceptanceCriteria": [
+        "修改 novel_system/services/continuation.py，消除对 world_rule.json, style_samples.json 等旧制品的依赖",
+        "在 continuation.py 中改为从 text_units 中抽取文风，或先执行平滑退避（降级处理）",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 23,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-024",
+      "title": "隔离旧 RAG 代码模块",
+      "description": "As a 开发者, I want to 将旧检索和旧索引文件物理搬迁到 legacy 目录 so that 保持主包的整洁性并防止无意引用。",
+      "acceptanceCriteria": [
+        "在 novel_system 下创建 legacy/old_rag/ 目录",
+        "将原 novel_system/search/ 目录，以及 retrieval.py, semantic_scorer.py, vector_store 等旧文件物理移动至 legacy/old_rag/ 下",
+        "全局扫描，确认除 legacy 目录外没有任何导入引用旧模块",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 24,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-025",
+      "title": "重建与迁移测试套件",
+      "description": "As a 开发者, I want to 废弃旧的 validator/searcher 测试并为全新的 GraphRAG App 写好 smoke tests so that 形成稳定的集成测试基础。",
+      "acceptanceCriteria": [
+        "将 tests/ 下针对 old RAG 的测试（如 test_search_orchestrator.py, test_character_registry.py）移动至 tests/legacy/",
+        "在 tests/ 下新建 graphrag_app/ 目录并创建各个组件（workspace, settings_builder, loader）的单元测试",
+        "全量运行 conda run -n chaishu python -m pytest 通过",
+        "Typecheck passes"
+      ],
+      "priority": 25,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-026",
+      "title": "改造前端交互并更新文档",
+      "description": "As a 用户, I want to 在页面上选择不同的搜索模式并去掉防剧透控件 so that 界面符合全新的小说分析定位。",
+      "acceptanceCriteria": [
+        "修改 templates/dashboard.html，添加 Search Mode（Auto/Local/Global/DRIFT/Basic）选择框，移除章节范围控制和防剧透提示",
+        "修改 static/js/main.js，配合路由发送 search_mode 参数，渲染 debug trace 里的 matched_entities",
+        "更新 README.md 与 docs/00_项目总览.md，记录 GraphRAG 架构特性",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 26,
+      "passes": false,
+      "notes": ""
     }
   ]
 }

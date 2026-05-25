@@ -21,13 +21,22 @@ from .llm_extraction import (
     filter_names_with_llm,
     extract_person_names,
 )
-from .vector_indexing import (
-    tokenize_chinese,
-    build_vector_payload,
-    build_faiss_index,
-    build_vector_indexes,
-    load_vector_stores,
-)
+try:
+    from .vector_indexing import (
+        tokenize_chinese,
+        build_vector_payload,
+        build_faiss_index,
+        build_vector_indexes,
+        load_vector_stores,
+    )
+except ImportError:
+    from ..legacy.old_rag.indexing.vector_indexing import (
+        tokenize_chinese,
+        build_vector_payload,
+        build_faiss_index,
+        build_vector_indexes,
+        load_vector_stores,
+    )
 from .artifact_builders import (
     build_chapter_summaries,
     build_event_timeline_from_chapters,

@@ -463,13 +463,16 @@ async function askQuestion() {
   }
 
   const scope = currentAskScope();
+  const searchMode = $("#search-mode")?.value || "auto";
   const payload = {
     user_query: query,
     scope: { chapters: [scope.start, scope.end] },
+    search_mode: searchMode,
     conversation_history: [
       { role: "user", content: "之后回答尽量简洁一点，但要带证据。" },
     ],
     session_id: "workspace",
+    debug: true,
   };
 
   setButtonLoading(button, true, "检索中...");

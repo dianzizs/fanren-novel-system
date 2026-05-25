@@ -15,10 +15,13 @@ from __future__ import annotations
 import mimetypes
 import re
 import unicodedata
+import logging
 from pathlib import Path
 from urllib.parse import unquote
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+
+logger = logging.getLogger(__name__)
 
 
 def _fix_filename_encoding(filename: str) -> str:
@@ -57,7 +60,16 @@ from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
 from .config import AppConfig
-from .models import AskRequest, CanonUpdateRequest, ContinueRequest, Scope
+from .models import (
+    AskRequest,
+    CanonUpdateRequest,
+    ContinueRequest,
+    EmbeddingRequest,
+    EmbeddingObject,
+    EmbeddingUsage,
+    EmbeddingResponse,
+    Scope,
+)
 from .service import NovelSystemService, create_service
 
 
@@ -227,7 +239,8 @@ def create_app() -> FastAPI:
     @app.post("/api/books/{book_id}/ask")
     async def ask(book_id: str, payload: AskRequest):
         book_id = _normalize_book_id(book_id)
-        return service.ask(book_id, payload).model_dump()
+        result = await service.ask(book_id, payload)
+        return result.model_dump()
 
     @app.post("/api/books/{book_id}/continue")
     async def continue_story(book_id: str, payload: ContinueRequest):
@@ -267,6 +280,32 @@ def create_app() -> FastAPI:
     @app.get("/api/dashboard")
     async def get_dashboard():
         return service.get_dashboard_data().model_dump()
+
+    @app.post("/v1/embeddings", response_model=EmbeddingResponse)
+    async def create_embeddings(payload: EmbeddingRequest):
+        """OpenAI-compatible embedding endpoint using local embedding provider."""
+        inputs = payload.input
+        if isinstance(inputs, str):
+            inputs = [inputs]
+        elif not isinstance(inputs, list):
+            raise HTTPException(status_code=400, detail="'input' must be a string or list of strings")
+        if not all(isinstance(t, str) for t in inputs):
+            raise HTTPException(status_code=400, detail="All input items must be strings")
+        try:
+            embeddings = service.embedding_provider.embed(inputs)
+            data = [
+                EmbeddingObject(embedding=emb, index=idx)
+                for idx, emb in enumerate(embeddings)
+            ]
+            token_count = sum(len(text) for text in inputs)
+            return EmbeddingResponse(
+                data=data,
+                model=payload.model,
+                usage=EmbeddingUsage(prompt_tokens=token_count, total_tokens=token_count),
+            )
+        except Exception as e:
+            logger.exception("Failed to generate embeddings")
+            raise HTTPException(status_code=500, detail=f"Failed to generate embeddings: {str(e)}")
 
     return app
 

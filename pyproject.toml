@@ -12,4 +12,5 @@ norecursedirs = [
   "docs",
   "static",
   "templates",
+  "tests/legacy",
 ]
