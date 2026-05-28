@@ -73,11 +73,17 @@ class NovelSystemBase:
         self.bootstrap_default_book()
 
     def bootstrap_default_book(self) -> None:
-        self.repo.ensure_book_manifest(
+        manifest = self.repo.ensure_book_manifest(
             self.config.default_book_id,
             self.config.default_book_title,
             str(self.config.default_book_path),
         )
+        book_dir = self.config.books_dir / self.config.default_book_id
+        if not (book_dir / "chapters.json").exists():
+            self.repo.prepare_chapters(
+                self.config.default_book_id,
+                str(self.config.default_book_path),
+            )
 
     def _render_scope(self, scope: Scope) -> str:
         if not scope.chapters:

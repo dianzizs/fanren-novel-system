@@ -1,9 +1,9 @@
 from __future__ import annotations
 import re
 from typing import Any
-from .constants import CHAPTER_RE
 from ..utils.text_utils import split_sentences, score_event_sentence
 
+CHAPTER_RE = re.compile(r"^第\s*(\d+)\s*章\s+(.+)$", re.MULTILINE)
 CHINESE_CHAPTER_RE = re.compile(
     r"^第\s*([零〇一二两三四五六七八九十百千万\d]+)\s*章\s*(.*)$",
     re.MULTILINE,
@@ -53,9 +53,14 @@ def _is_chapter_heading(line: str, number_text: str, title: str) -> bool:
     }
 
 def parse_chapters(raw_text: str) -> list[dict[str, Any]]:
-    matches = list(CHAPTER_RE.finditer(raw_text))
-    if not matches:
-        matches = list(CHINESE_CHAPTER_RE.finditer(raw_text))
+    matches1 = list(CHAPTER_RE.finditer(raw_text))
+    matches2 = list(CHINESE_CHAPTER_RE.finditer(raw_text))
+    seen_starts = set()
+    matches = []
+    for match in sorted(matches1 + matches2, key=lambda m: m.start()):
+        if match.start() not in seen_starts:
+            seen_starts.add(match.start())
+            matches.append(match)
     chapters: list[dict[str, Any]] = []
     for index, match in enumerate(matches):
         start = match.start()
@@ -83,37 +88,6 @@ def parse_chapters(raw_text: str) -> list[dict[str, Any]]:
             }
         )
     return chapters
-
-
-def build_chunks(chapters: list[dict[str, Any]], chunk_size: int = 420, overlap: int = 80) -> list[dict[str, Any]]:
-    chunks: list[dict[str, Any]] = []
-    for chapter in chapters:
-        text = chapter["text"]
-        if not text:
-            continue
-        start = 0
-        chunk_id = 0
-        while start < len(text):
-            end = min(len(text), start + chunk_size)
-            snippet = text[start:end].strip()
-            if snippet:
-                chunks.append(
-                    {
-                        "id": f"ch{chapter['chapter']}-chunk{chunk_id}",
-                        "chapter": chapter["chapter"],
-                        "title": chapter["title"],
-                        "target": "chapter_chunks",
-                        "text": snippet,
-                        "source": f"第{chapter['chapter']}章 {chapter['title']}",
-                        "start": start,
-                        "end": end,
-                    }
-                )
-                chunk_id += 1
-            if end >= len(text):
-                break
-            start = max(0, end - overlap)
-    return chunks
 
 
 def clean_line(line: str) -> str:

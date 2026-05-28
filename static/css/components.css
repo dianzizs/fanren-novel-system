@@ -208,6 +208,13 @@ textarea {
   transition: width 0.3s ease;
 }
 
+#progress-message {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 /* ── Feedback Card ── */
 .feedback-card {
   padding: 14px;

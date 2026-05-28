@@ -147,7 +147,7 @@ async function showBookDetail(bookId) {
   $("#back-to-library").onclick = () => appState.navigate("#/");
 }
 
-function updateDetailStatus(status, progress) {
+function updateDetailStatus(status, progress, message = null) {
   const statusEl = $("#detail-book-status");
   const progressEl = $("#detail-progress");
   const fillEl = $("#progress-fill");
@@ -163,7 +163,7 @@ function updateDetailStatus(status, progress) {
   if (status === "indexing") {
     progressEl.hidden = false;
     fillEl.style.width = `${(progress * 100).toFixed(0)}%`;
-    msgEl.textContent = `正在分析... (${(progress * 100).toFixed(0)}%)`;
+    msgEl.textContent = message || `正在分析... (${(progress * 100).toFixed(0)}%)`;
   } else if (status === "ready") {
     progressEl.hidden = true;
   }
@@ -177,7 +177,7 @@ function startPollingStatus(bookId) {
 
   const poll = async () => {
     const status = await getBookStatus(bookId);
-    updateDetailStatus(status.status, status.progress);
+    updateDetailStatus(status.status, status.progress, status.message);
     loadDetailArtifacts(bookId).catch(console.error);
 
     if (status.status === "indexing") {
@@ -595,6 +595,23 @@ function bindGlobalEvents() {
   });
 }
 
+function initWindowLifecycleShutdown() {
+  const sendWindowHeartbeat = () => {
+    fetch("/api/system/window-heartbeat", { method: "POST", keepalive: true }).catch(() => {});
+  };
+  const sendWindowClosed = () => {
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon("/api/system/window-closed");
+      return;
+    }
+    fetch("/api/system/window-closed", { method: "POST", keepalive: true }).catch(() => {});
+  };
+
+  sendWindowHeartbeat();
+  window.setInterval(sendWindowHeartbeat, 3000);
+  window.addEventListener("pagehide", sendWindowClosed);
+}
+
 /* ── Bootstrap ── */
 async function bootstrap() {
   initRouter();
@@ -605,6 +622,7 @@ async function bootstrap() {
   initContinuation(appState);
   initEvaluation(appState);
   bindGlobalEvents();
+  initWindowLifecycleShutdown();
 
   try {
     await loadBooks(appState);

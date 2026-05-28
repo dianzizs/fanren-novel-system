@@ -30,6 +30,20 @@ def _load_dotenv(dotenv_path: Path) -> None:
         os.environ.setdefault(key, value)
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None or value.strip() == "":
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_int(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if value is None or value.strip() == "":
+        return default
+    return int(value)
+
+
 @dataclass
 class AppConfig:
     """应用配置，包含所有模块的配置项。
@@ -77,11 +91,13 @@ class AppConfig:
     graphrag_index_timeout_sec: int = 7200
     graphrag_default_search_mode: str = "auto"
     graphrag_enable_claims: bool = True
-    graphrag_embedding_api_base: str = "http://localhost:8000/v1"
+    graphrag_embedding_api_base: str = "http://localhost:3000/v1"
     graphrag_embedding_model: str = "Qwen/Qwen3-Embedding-4B"
     graphrag_chat_model: str = "MiniMax-m2.7-HighSpeed"
     graphrag_chat_api_base: str = "https://api.minimax.chat/v1"
     graphrag_api_key: str = ""
+    shutdown_on_window_close: bool = False
+    shutdown_grace_period_sec: int = 5
 
     @classmethod
     def load(cls) -> "AppConfig":
@@ -156,9 +172,11 @@ class AppConfig:
             graphrag_index_timeout_sec=int(os.getenv("GRAPHRAG_INDEX_TIMEOUT_SEC", "7200")),
             graphrag_default_search_mode=os.getenv("GRAPHRAG_DEFAULT_SEARCH_MODE", "auto"),
             graphrag_enable_claims=os.getenv("GRAPHRAG_ENABLE_CLAIMS", "true").lower() == "true",
-            graphrag_embedding_api_base=os.getenv("GRAPHRAG_EMBEDDING_API_BASE", "http://localhost:8000/v1"),
+            graphrag_embedding_api_base=os.getenv("GRAPHRAG_EMBEDDING_API_BASE", "http://localhost:3000/v1"),
             graphrag_embedding_model=os.getenv("GRAPHRAG_EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-4B"),
             graphrag_chat_model=os.getenv("GRAPHRAG_CHAT_MODEL", "MiniMax-m2.7-HighSpeed"),
             graphrag_chat_api_base=os.getenv("GRAPHRAG_CHAT_API_BASE", "https://api.minimax.chat/v1"),
             graphrag_api_key=os.getenv("GRAPHRAG_API_KEY", os.getenv("MINIMAX_API_KEY", "")),
+            shutdown_on_window_close=_env_bool("SHUTDOWN_ON_WINDOW_CLOSE", False),
+            shutdown_grace_period_sec=_env_int("SHUTDOWN_GRACE_PERIOD_SEC", 5),
         )

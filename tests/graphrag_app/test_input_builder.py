@@ -56,3 +56,30 @@ def test_build_from_txt_writes_chapter_metadata_and_total_chars(test_config, tmp
     assert "# chapter_index: 1" in first
     assert "# chapter_title: 开始" in first
     assert first.endswith(f"{chapter_one}\n")
+
+
+def test_build_from_txt_limits_chapters(test_config, tmp_path):
+    import os
+    config = test_config
+    builder = GraphRAGInputBuilder(config)
+    book_id = "test-book-input-limit"
+    source = tmp_path / "source.txt"
+    source.write_text(
+        "第1章 开始\n\n这是第一章内容。\n\n第2章 继续\n\n这是第二章内容。",
+        encoding="utf-8",
+    )
+
+    os.environ["GRAPHRAG_MAX_CHAPTERS"] = "1"
+    try:
+        result = builder.build_from_txt(book_id, source)
+        assert result["chapter_count"] == 1
+        assert result["input_files"] == 1
+        input_dir = graphrag_input_dir(config, book_id)
+        files = list(input_dir.glob("*.txt"))
+        assert len(files) == 1
+        assert files[0].name == "chapter_0001.txt"
+    finally:
+        os.environ.pop("GRAPHRAG_MAX_CHAPTERS", None)
+        import shutil
+        shutil.rmtree(input_dir.parent, ignore_errors=True)
+        source.unlink(missing_ok=True)

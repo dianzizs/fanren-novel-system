@@ -13,7 +13,10 @@
 from __future__ import annotations
 
 import mimetypes
+import os
 import re
+import threading
+import time
 import unicodedata
 import logging
 from pathlib import Path
@@ -86,6 +89,35 @@ def _normalize_book_id(book_id: str) -> str:
     return normalized
 
 
+def _default_shutdown_callback() -> None:
+    os._exit(0)
+
+
+def _schedule_window_close_shutdown(app: FastAPI) -> None:
+    config = app.state.config
+    grace = max(int(config.shutdown_grace_period_sec), 0)
+
+    def maybe_shutdown() -> None:
+        with app.state.shutdown_lock:
+            last_seen = app.state.shutdown_last_seen
+        if time.monotonic() - last_seen >= grace:
+            app.state.shutdown_callback()
+
+    with app.state.shutdown_lock:
+        timer = getattr(app.state, "shutdown_timer", None)
+        if timer:
+            timer.cancel()
+        if grace == 0:
+            app.state.shutdown_timer = None
+        else:
+            timer = threading.Timer(grace, maybe_shutdown)
+            timer.daemon = True
+            app.state.shutdown_timer = timer
+            timer.start()
+            return
+    maybe_shutdown()
+
+
 def create_app() -> FastAPI:
     """创建并配置 FastAPI 应用实例。
 
@@ -99,6 +131,10 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Novel System Workspace", version="1.0.0")
     app.state.config = config
     app.state.service = service
+    app.state.shutdown_last_seen = time.monotonic()
+    app.state.shutdown_lock = threading.Lock()
+    app.state.shutdown_timer = None
+    app.state.shutdown_callback = _default_shutdown_callback
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -131,6 +167,25 @@ def create_app() -> FastAPI:
     @app.get("/api/token-stats")
     async def get_token_stats():
         return service.get_token_stats()
+
+    @app.post("/api/system/window-heartbeat")
+    async def window_heartbeat():
+        if not config.shutdown_on_window_close:
+            return {"enabled": False}
+        with app.state.shutdown_lock:
+            app.state.shutdown_last_seen = time.monotonic()
+        return {"enabled": True}
+
+    @app.post("/api/system/window-closed")
+    async def window_closed():
+        if not config.shutdown_on_window_close:
+            return {"enabled": False}
+        _schedule_window_close_shutdown(app)
+        return {
+            "enabled": True,
+            "status": "scheduled",
+            "grace_period_sec": config.shutdown_grace_period_sec,
+        }
 
     @app.delete("/api/books/{book_id}")
     def delete_book(book_id: str):
@@ -168,6 +223,7 @@ def create_app() -> FastAPI:
                 status="pending",
                 reset_existing=bool(existing),
             )
+            service.repo.prepare_chapters(safe_id, str(target_path))
             return manifest
         chosen_path = Path(file_path) if file_path else config.default_book_path
         if not chosen_path.exists():
@@ -184,19 +240,7 @@ def create_app() -> FastAPI:
             status="pending",
             reset_existing=bool(existing),
         )
-        return manifest
-
-    @app.post("/api/books/{book_id}/index")
-    async def index_book(book_id: str):
-        book_id = _normalize_book_id(book_id)
-        books = {book.id: book for book in service.list_books()}
-        book = books.get(book_id)
-        if book_id == config.default_book_id:
-            manifest = service.index_default_book()
-            return manifest
-        if not book:
-            raise HTTPException(status_code=404, detail="book not registered")
-        manifest = service.index_book(book_id, book.title, Path(book.source_path))
+        service.repo.prepare_chapters(book_id, str(chosen_path))
         return manifest
 
     @app.get("/api/books/{book_id}/status")

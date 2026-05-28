@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -100,6 +101,13 @@ class MiniMaxDirectClient:
         for attempt in range(self.MAX_RETRIES + 1):
             try:
                 _throttle()
+                logger.info(
+                    "MiniMax API Request: model=%s, messages=%s, temperature=%s, max_tokens=%s",
+                    self.model,
+                    json.dumps(messages, ensure_ascii=False),
+                    temperature,
+                    max_tokens,
+                )
                 response = requests.post(
                     f"{self.base_url}/chat/completions",
                     headers={
@@ -131,6 +139,11 @@ class MiniMaxDirectClient:
                 content = payload["choices"][0]["message"]["content"]
                 usage = payload.get("usage")
                 result = THINK_TAG_RE.sub("", content).strip()
+                logger.info(
+                    "MiniMax API Response: content=%s, usage=%s",
+                    result,
+                    json.dumps(usage, ensure_ascii=False) if usage else "None",
+                )
                 return LLMResponse(content=result, usage=usage)
 
             except (requests.exceptions.RequestException, KeyError, ValueError) as e:
@@ -218,6 +231,11 @@ class MimoClient:
         for attempt in range(self.MAX_RETRIES + 1):
             try:
                 _throttle()
+                logger.info(
+                    "Mimo API Request: model=%s, payload=%s",
+                    self.model,
+                    json.dumps(payload, ensure_ascii=False),
+                )
                 response = requests.post(
                     f"{self.base_url}/v1/messages",
                     headers=headers,
@@ -259,6 +277,11 @@ class MimoClient:
                 }
 
                 result = THINK_TAG_RE.sub("", content).strip()
+                logger.info(
+                    "Mimo API Response: content=%s, usage=%s",
+                    result,
+                    json.dumps(usage, ensure_ascii=False) if usage else "None",
+                )
                 return LLMResponse(content=result, usage=usage)
 
             except (requests.exceptions.RequestException, KeyError, ValueError) as e:

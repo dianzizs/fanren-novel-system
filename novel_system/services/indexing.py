@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from ..graphrag_app.paths import graphrag_root
 from ..models import BookInfo
 
 logger = logging.getLogger(__name__)
@@ -44,11 +46,18 @@ class IndexingServiceMixin:
         manifest = next((book for book in self.repo.list_books() if book["id"] == book_id), None)
         if not manifest:
             raise FileNotFoundError(f"Book {book_id} not found")
+        progress = manifest.get("index_progress", 0.0)
+        message = self._get_status_message(manifest)
+        if manifest.get("status") == "indexing":
+            live_status = self._get_live_graphrag_status(book_id, progress)
+            if live_status:
+                progress = live_status["progress"]
+                message = live_status["message"]
         return {
             "book_id": book_id,
             "status": manifest.get("status", "pending"),
-            "progress": manifest.get("index_progress", 0.0),
-            "message": self._get_status_message(manifest),
+            "progress": progress,
+            "message": message,
         }
 
     def _get_status_message(self, manifest: dict[str, Any]) -> str:
@@ -64,6 +73,66 @@ class IndexingServiceMixin:
         elif status == "error":
             return "分析失败"
         return "未知状态"
+
+    def _get_live_graphrag_status(self, book_id: str, current_progress: float) -> dict[str, Any] | None:
+        log_path = graphrag_root(self.config, book_id) / "logs" / "indexing-engine.log"
+        if not log_path.exists():
+            return None
+
+        try:
+            lines = log_path.read_text(encoding="utf-8", errors="ignore").splitlines()[-200:]
+        except OSError:
+            return None
+
+        patterns = [
+            (
+                re.compile(r"extract graph progress:\s*(\d+)/(\d+)", re.IGNORECASE),
+                0.30,
+                0.50,
+                "正在抽取实体关系",
+            ),
+            (
+                re.compile(r"Summarize entity/relationship description progress:\s*(\d+)/(\d+)", re.IGNORECASE),
+                0.50,
+                0.62,
+                "正在汇总实体关系描述",
+            ),
+            (
+                re.compile(r"extract claims progress:\s*(\d+)/(\d+)", re.IGNORECASE),
+                0.62,
+                0.70,
+                "正在抽取事件线索",
+            ),
+            (
+                re.compile(r"community reports progress:\s*(\d+)/(\d+)", re.IGNORECASE),
+                0.76,
+                0.82,
+                "正在生成社区报告",
+            ),
+            (
+                re.compile(r"generate text embeddings progress:\s*(\d+)/(\d+)", re.IGNORECASE),
+                0.82,
+                0.85,
+                "正在生成文本向量",
+            ),
+        ]
+
+        live_status: dict[str, Any] | None = None
+        for line in lines:
+            for pattern, start, end, label in patterns:
+                match = pattern.search(line)
+                if not match:
+                    continue
+                done = int(match.group(1))
+                total = max(int(match.group(2)), 1)
+                ratio = min(max(done / total, 0.0), 1.0)
+                progress = max(current_progress, start + (end - start) * ratio)
+                live_status = {
+                    "progress": round(progress, 4),
+                    "message": f"{label}... ({done}/{total})",
+                }
+
+        return live_status
 
     def set_book_indexing(self, book_id: str, status: str, progress: float = 0.0) -> None:
         """更新书籍索引状态"""
@@ -218,22 +287,11 @@ class IndexingServiceMixin:
 
         return {"success": True, "book_id": book_id}
 
-    def index_default_book(self) -> dict[str, Any]:
-        return self.index_book(
-            self.config.default_book_id,
-            self.config.default_book_title,
-            self.config.default_book_path,
-        )
-
-    def index_book(self, book_id: str, title: str | None = None, source_path: Path | None = None) -> dict[str, Any]:
-        title = title or self.config.default_book_title
-        source_path = source_path or self.config.default_book_path
-        manifest = self.repo.build_from_txt(book_id, title, source_path)
-        return manifest
-
     def ensure_indexed(self, book_id: str) -> None:
+        """Verify a book has been indexed. Raises FileNotFoundError if not."""
         manifest = next((book for book in self.repo.list_books() if book["id"] == book_id), None)
         if not manifest or not manifest.get("indexed"):
-            if book_id != self.config.default_book_id:
-                raise FileNotFoundError(f"Book {book_id} is not indexed")
-            self.index_default_book()
+            raise FileNotFoundError(
+                f"Book {book_id} is not indexed yet. "
+                "Please click 'Start Analysis' in the console first."
+            )

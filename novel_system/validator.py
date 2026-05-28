@@ -19,7 +19,6 @@ from typing import TYPE_CHECKING, Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from .entity_extractor import EntityExtractor, get_extractor
 from .models import APIWarning, EvidenceItem, Scope
 
 if TYPE_CHECKING:
@@ -262,18 +261,8 @@ class AnswerValidator:
         "明确", "确定", "肯定", "确实", "清楚",
     ]
 
-    def __init__(self, use_entity_check: bool = True):
-        """
-        初始化答案验证器
-
-        Args:
-            use_entity_check: 是否启用实体一致性检查
-        """
-        self.use_entity_check = use_entity_check
-        if use_entity_check:
-            self._entity_extractor = get_extractor()
-        else:
-            self._entity_extractor = None
+    def __init__(self):
+        """初始化答案验证器"""
 
     def validate(
         self,
@@ -303,15 +292,9 @@ class AnswerValidator:
         # 2. 检查答案是否基于证据
         groundedness_score = self._compute_groundedness(answer, evidence)
 
-        # 3. 实体一致性检查（新增）
-        entity_issues = []
-        if self.use_entity_check and self._entity_extractor:
-            entity_issues = self._check_entity_consistency(answer, evidence)
-            issues.extend(entity_issues)
-
-        # 4. 检测幻觉风险（修改：传入 entity_issues）
+        # 3. 检测幻觉风险
         hallucination_risk = self._assess_hallucination_risk(
-            answer, evidence, groundedness_score, gate_result, entity_issues
+            answer, evidence, groundedness_score, gate_result
         )
 
         # 5. 计算置信度
@@ -331,8 +314,6 @@ class AnswerValidator:
         if uncertainty_detected and gate_result.sufficient:
             issues.append("证据充分但答案表达不确定")
 
-        if entity_issues:
-            suggestions.append("答案中存在与证据矛盾的内容，请核实")
 
         valid = len(issues) == 0 or (len(issues) == 1 and uncertainty_detected and gate_result.sufficient)
 
@@ -379,68 +360,14 @@ class AnswerValidator:
         # 过滤非实体词（疑问词、代词、功能词等）
         return _filter_non_entities(words)
 
-    def _check_entity_consistency(
-        self,
-        answer: str,
-        evidence: list[EvidenceItem],
-    ) -> list[str]:
-        """
-        检查答案与证据之间的实体一致性
-
-        Args:
-            answer: 生成的答案
-            evidence: 证据列表
-
-        Returns:
-            矛盾问题列表
-        """
-        issues = []
-
-        if not self._entity_extractor:
-            return issues
-
-        # 合并证据文本
-        evidence_text = " ".join(e.quote for e in evidence if e.quote)
-        if not evidence_text:
-            return issues
-
-        # 从答案中抽取实体
-        answer_entities = self._entity_extractor.extract_entities(answer)
-
-        for entity in answer_entities:
-            # 检查实体在答案和证据之间的属性一致性
-            entity_issues = self._entity_extractor.check_entity_consistency(
-                evidence_text, answer, entity.name
-            )
-            issues.extend(entity_issues)
-
-        return issues
-
     def _assess_hallucination_risk(
         self,
         answer: str,
         evidence: list[EvidenceItem],
         groundedness_score: float,
         gate_result: EvidenceGateResult,
-        entity_issues: Optional[list[str]] = None,
     ) -> Literal["low", "medium", "high"]:
-        """
-        评估幻觉风险
-
-        Args:
-            answer: 生成的答案
-            evidence: 证据列表
-            groundedness_score: 基于证据的程度分数
-            gate_result: 证据门槛结果
-            entity_issues: 实体一致性问题列表（新增）
-
-        Returns:
-            幻觉风险级别
-        """
-        # 实体矛盾直接判定高风险
-        if entity_issues:
-            return "high"
-
+        """评估幻觉风险"""
         # 证据不足时风险高
         if not gate_result.sufficient or gate_result.relevance_score < 0.3:
             if not any(phrase in answer for phrase in self.UNCERTAINTY_PHRASES):
@@ -504,18 +431,8 @@ class ContinuationValidator:
     3. 文风一致性
     """
 
-    def __init__(self, use_entity_check: bool = True):
-        """
-        初始化续写验证器
-
-        Args:
-            use_entity_check: 是否启用实体一致性检查
-        """
-        self.use_entity_check = use_entity_check
-        if use_entity_check:
-            self._entity_extractor = get_extractor()
-        else:
-            self._entity_extractor = None
+    def __init__(self):
+        """初始化续写验证器"""
 
     def validate(
         self,
@@ -592,15 +509,7 @@ class ContinuationValidator:
             if appearance:
                 issues.extend(self._check_appearance(continuation, name, appearance))
 
-            # 2. 检查性格一致性（新增）
-            personality = card.get("personality", "")
-            if personality:
-                issues.extend(self._check_personality(continuation, name, personality))
 
-            # 3. 检查修为等级一致性（新增）
-            level = card.get("level", "")
-            if level:
-                issues.extend(self._check_cultivation_level(continuation, name, level, scope))
 
         return issues
 
@@ -612,18 +521,8 @@ class ContinuationValidator:
     ) -> list[str]:
         """检查外貌一致性"""
         issues = []
-
-        # 使用 EntityExtractor 检查
-        if self._entity_extractor:
-            entity_issues = self._entity_extractor.check_entity_consistency(
-                appearance, continuation, name
-            )
-            issues.extend(entity_issues)
-
-        # 保留原有的颜色检查逻辑（向后兼容）
         color_issues = self._check_color_consistency(continuation, name, appearance)
         issues.extend(color_issues)
-
         return issues
 
     def _check_color_consistency(
@@ -655,67 +554,9 @@ class ContinuationValidator:
 
         return issues
 
-    def _check_personality(
-        self,
-        continuation: str,
-        name: str,
-        personality: str,
-    ) -> list[str]:
-        """检查性格一致性"""
-        issues = []
 
-        if not self._entity_extractor:
-            return issues
 
-        # 使用 EntityExtractor 检查性格矛盾
-        entity_issues = self._entity_extractor.check_entity_consistency(
-            personality, continuation, name
-        )
-        issues.extend(entity_issues)
 
-        # 额外检查：性格对立词直接检测
-        for trait, opposites in self._entity_extractor.PERSONALITY_OPPOSITES.items():
-            if trait in personality:
-                for opp in opposites:
-                    pattern = f"{name}.{{0,50}}{opp}"
-                    if re.search(pattern, continuation):
-                        issues.append(
-                            f"'{name}' 的性格描述可能有矛盾："
-                            f"人物卡性格为 '{trait}'，续写中出现 '{opp}'"
-                        )
-
-        return issues
-
-    def _check_cultivation_level(
-        self,
-        continuation: str,
-        name: str,
-        level: str,
-        scope: Scope,
-    ) -> list[str]:
-        """检查修为等级一致性"""
-        issues = []
-
-        if not self._entity_extractor:
-            return issues
-
-        # 获取当前等级索引
-        current_idx = self._entity_extractor.get_cultivation_level_index(level)
-        if current_idx == -1:
-            return issues
-
-        # 检查续写中的等级
-        for i, lvl in enumerate(self._entity_extractor.CULTIVATION_LEVELS):
-            if lvl in continuation:
-                # 如果等级跳跃超过2级，认为有问题
-                if i > current_idx + 2:
-                    issues.append(
-                        f"'{name}' 的修为等级跳跃过大："
-                        f"人物卡为 '{level}'，续写中提及 '{lvl}'"
-                    )
-                    break
-
-        return issues
 
     def _extract_appearance_keywords(self, appearance: str) -> list[str]:
         """提取外貌关键词"""

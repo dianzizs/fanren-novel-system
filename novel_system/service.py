@@ -17,7 +17,6 @@ from typing import Any
 from .config import AppConfig
 from .models import CanonUpdateRequest, TimelineEvent, Scope
 from .embedding import create_embedding_provider
-from .indexing import scope_filter
 from .services import (
     NovelSystemBase,
     QAServiceMixin,
@@ -43,15 +42,7 @@ class NovelSystemService(
 
     def get_canon(self, book_id: str, scope: Scope | None = None) -> dict[str, Any]:
         self.ensure_indexed(book_id)
-        book_index = self.repo.load(book_id)
-        scope = scope or Scope()
-        items = [
-            doc["text"]
-            for doc in book_index.corpora.get("canon_memory", [])
-            if scope_filter(int(doc.get("chapter", 0)), scope.chapters)
-        ][:20]
-        items.extend(self._load_user_canon(book_id))
-        return {"book_id": book_id, "items": items}
+        return {"book_id": book_id, "items": self._load_user_canon(book_id)}
 
     def update_canon(self, book_id: str, payload: CanonUpdateRequest) -> dict[str, Any]:
         current = self._load_user_canon(book_id)
@@ -62,28 +53,13 @@ class NovelSystemService(
 
     def get_timeline(self, book_id: str, scope: Scope | None = None) -> list[TimelineEvent]:
         self.ensure_indexed(book_id)
-        book_index = self.repo.load(book_id)
-        scope = scope or Scope()
-        events = []
-        for doc in book_index.corpora.get("event_timeline", []):
-            chapter = int(doc.get("chapter", 0))
-            if not scope_filter(chapter, scope.chapters):
-                continue
-            events.append(
-                TimelineEvent(
-                    chapter=chapter,
-                    title=doc.get("title", ""),
-                    description=doc.get("description", doc.get("text", "")),
-                    participants=doc.get("participants", []),
-                )
-            )
-        return events
+        return self.timeline_projector.get_timeline(book_id)
 
     def get_reader_payload(self, book_id: str, chapter: int | None = None) -> dict[str, Any]:
         self.ensure_indexed(book_id)
         book_index = self.repo.load(book_id)
         chapters = [
-            {"chapter": item["chapter"], "title": item["title"], "summary": self._chapter_summary(book_index, item["chapter"])}
+            {"chapter": item["chapter"], "title": item["title"], "summary": ""}
             for item in book_index.chapters
         ]
         active = chapter or chapters[0]["chapter"]
@@ -92,8 +68,8 @@ class NovelSystemService(
             "book": book_index.manifest,
             "chapters": chapters,
             "current_chapter": current,
-            "top_characters": book_index.corpora.get("character_card", [])[:12],
-            "timeline": [event.model_dump() for event in self.get_timeline(book_id, Scope(chapters=[max(1, active - 2), active]))][:8],
+            "top_characters": [],
+            "timeline": [event.model_dump() for event in self.get_timeline(book_id)][:8],
         }
 
 

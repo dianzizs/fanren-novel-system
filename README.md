@@ -12,7 +12,7 @@
 
 | 模块 | 状态 | 说明 |
 |---|---|---|
-| FastAPI 服务 | 可用 | 服务启动入口，提供全量 REST API 并托载 Web Dashboard，端口为 8000。 |
+| FastAPI 服务 | 可用 | 服务启动入口，提供全量 REST API 并托载 Web Dashboard，端口为 3000。 |
 | GraphRAG 索引 | 可用 | 依赖 GraphRAG CLI 异步构建。可以为上传的小说自动准备 Workspace、生成 settings.yaml 并构建索引。 |
 | GraphRAG 查询 | 可用 | 主问答路径。基于 GraphRAG Python API，支持 Local / Global / DRIFT / Basic 四种检索模式和 Auto 智能路由。 |
 | 本地 embedding | 需要配置 | 依赖本地运行的 OpenAI-compatible Embedding Server（推荐使用 GPU 或 CPU 加速的 OpenVINO 服务）。 |
@@ -84,7 +84,7 @@ cp .env.example .env
 - `MINIMAX_API_KEY`: 填入你的 MiniMax 大模型 API Key。
 - `EMBEDDING_PROVIDER`: 默认为 `local_openvino`，依赖本地的 Embedding 向量服务。
 - `LOCAL_EMBEDDING_MODEL`: 默认为 `BAAI/bge-small-zh-v1.5`。
-- `GRAPHRAG_EMBEDDING_API_BASE`: 本地 Embedding 服务接口地址（通常为 `http://localhost:8000/v1`）。
+- `GRAPHRAG_EMBEDDING_API_BASE`: 本地 Embedding 服务接口地址（通常为 `http://localhost:3000/v1`）。
 
 > [!IMPORTANT]
 > 项目非常依赖本地 Embedding Server 和 MiniMax API。运行索引与问答前，请确保 Embedding Server 已在后台正常运行。
@@ -95,15 +95,15 @@ cp .env.example .env
 conda run -n chaishu python start_server.py
 ```
 服务启动后，可以访问以下页面：
-- **Web 可视化控制台 (Dashboard)**: `http://localhost:8000`
-- **FastAPI 交互式 API 文档 (Swagger)**: `http://localhost:8000/docs`
+- **Web 可视化控制台 (Dashboard)**: `http://localhost:3000`
+- **FastAPI 交互式 API 文档 (Swagger)**: `http://localhost:3000/docs`
 
 ### 4.4 书籍导入与索引构建
 
 1. 访问 Web 页面（Dashboard）或者使用 REST API 注册一本书（例如上传 `.txt` 小说）。
 2. 在控制台点击 **"构建索引"**，或者发送 POST 请求：
    ```bash
-   curl -X POST "http://localhost:8000/api/books/{book_id}/start-index"
+   curl -X POST "http://localhost:3000/api/books/{book_id}/start-index"
    ```
 3. 构建索引将通过子进程异步调用 `graphrag index`，可能耗时较长（需要进行大范围实体抽取与关系提炼）。可以通过 `GET /api/books/{book_id}/status` 监控构建进度。
 4. 索引构建完成后，系统将自动生成对应的派生图谱和时间线，供前端渲染。
@@ -124,7 +124,7 @@ conda run -n chaishu python -m pytest
 ### 5.2 索引构建任务报错或卡在 0% 不动
 - **原因**：通常是由于本地 Embedding 服务未启动，或大模型 API 调用由于无效 Key、额度不足、网络超时而报错。
 - **排错步骤**：
-  1. 检查本地 `http://localhost:8000/v1` (或你配置的 Embedding 路径) 是否可访问，并且可以通过 `/v1/embeddings` 生成向量。
+  1. 检查本地 `http://localhost:3000/v1` (或你配置的 Embedding 路径) 是否可访问，并且可以通过 `/v1/embeddings` 生成向量。
   2. 查看后台控制台的日志，或者是 `data/books/{book_id}/graphrag/` 路径下的 `index_runner.py` 报错日志。
   3. 检查大模型 API 额度，确认 `.env` 中填写的 `MINIMAX_API_KEY` 正确无误。
 

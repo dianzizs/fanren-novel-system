@@ -13,18 +13,6 @@ from ..models import (
 ARTIFACT_LABELS = {
     "manifest": "书目状态",
     "chapters": "分章结果",
-    "scene_segments": "场景片段",
-    "character_registry": "角色注册表",
-    "chapter_chunks": "切片结果（已废弃）",
-    "chapter_summaries": "章节摘要（已废弃）",
-    "event_timeline": "事件时间线（已废弃）",
-    "character_card": "人物卡（已废弃）",
-    "relationship_graph": "关系图（已废弃）",
-    "world_rule": "世界规则（已废弃）",
-    "canon_memory": "设定记忆（已废弃）",
-    "recent_plot": "近期剧情（已废弃）",
-    "style_samples": "风格样本（已废弃）",
-    "vision_parse": "视觉解析（已废弃）",
 }
 
 

@@ -56,3 +56,23 @@ def test_mimo_trailing_slash_stripped():
     with patch.dict(os.environ, {"MIMO_BASE_URL": "https://mimo.example.com/"}):
         config = AppConfig.load()
         assert not config.mimo_base_url.endswith("/")
+
+
+def test_shutdown_on_window_close_defaults_disabled():
+    """Window-close shutdown is opt-in by default."""
+    with patch.dict(os.environ, {"SHUTDOWN_ON_WINDOW_CLOSE": "", "SHUTDOWN_GRACE_PERIOD_SEC": ""}):
+        config = AppConfig.load()
+        assert config.shutdown_on_window_close is False
+        assert config.shutdown_grace_period_sec == 5
+
+
+def test_shutdown_on_window_close_config_from_env():
+    """Window-close shutdown settings can be enabled from env vars."""
+    env = {
+        "SHUTDOWN_ON_WINDOW_CLOSE": "true",
+        "SHUTDOWN_GRACE_PERIOD_SEC": "3",
+    }
+    with patch.dict(os.environ, env):
+        config = AppConfig.load()
+        assert config.shutdown_on_window_close is True
+        assert config.shutdown_grace_period_sec == 3

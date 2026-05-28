@@ -32,6 +32,18 @@ class GraphRAGInputBuilder:
     def build_from_txt(self, book_id: str, source_path: Path) -> dict:
         raw_text = _read_text_with_fallback(source_path)
         chapters = parse_chapters(raw_text)
+        
+        import os
+        max_chapters_env = os.getenv("GRAPHRAG_MAX_CHAPTERS")
+        if max_chapters_env:
+            try:
+                limit = int(max_chapters_env)
+                if limit > 0:
+                    logger.info("Limiting indexing to first %d chapters due to GRAPHRAG_MAX_CHAPTERS", limit)
+                    chapters = chapters[:limit]
+            except ValueError:
+                pass
+
         input_dir = graphrag_input_dir(self._config, book_id)
         input_dir.mkdir(parents=True, exist_ok=True)
 
